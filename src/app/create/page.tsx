@@ -3,75 +3,44 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { nanoid } from "nanoid";
-import { defaultNarration, defaultPrivatePrompt, roundTitle } from "@/lib/content";
-
-const DEFAULT_PLAYERS = ["Brandon", "Kristen", "Adam", "Heidi", "Tim", "Katie"];
-const ROUND_NUMBERS = [1, 2, 3, 4];
 
 export default function CreateGame() {
   const [loading, setLoading] = useState(false);
+  const [playerCount, setPlayerCount] = useState<number>(6);
+
   const [gameId, setGameId] = useState<string | null>(null);
   const [hostPin, setHostPin] = useState<string | null>(null);
-  const [codes, setCodes] = useState<{ name: string; code: string }[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function onCreate() {
     setLoading(true);
+    setErrorMsg(null);
+
     try {
-      // 1) Create game
       const pin = nanoid(8);
 
+      // Create ONLY the game.
+      // Requires games.host_pin and games.player_count columns.
+      // status is optional — if your table doesn't have it, remove that field.
       const { data: game, error: gErr } = await supabase
         .from("games")
-        .insert({ host_pin: pin })
-        .select("id, host_pin")
+        .insert({
+          host_pin: pin,
+          player_count: playerCount,
+          status: "setup",
+          current_round: 0,
+          story_generated: false,
+        })
+        .select("id, host_pin, player_count")
         .single();
 
       if (gErr || !game) throw gErr ?? new Error("Failed to create game");
 
-      // 2) Create players
-      const playerRows = DEFAULT_PLAYERS.map((name) => ({
-        game_id: game.id,
-        name,
-        code: nanoid(7),
-      }));
-
-      const { data: players, error: pErr } = await supabase
-        .from("players")
-        .insert(playerRows)
-        .select("id, name, code, game_id");
-
-      if (pErr || !players) throw pErr ?? new Error("Failed to create players");
-
-      // 3) Seed rounds
-      const roundRows = ROUND_NUMBERS.map((n) => ({
-        game_id: game.id,
-        round_number: n,
-        title: roundTitle(n),
-        narration_text: defaultNarration(n),
-      }));
-
-      const { error: rErr } = await supabase.from("rounds").insert(roundRows);
-      if (rErr) throw rErr;
-
-      // 4) Seed private prompts
-      const prcRows = (players as any[]).flatMap((pl: any) =>
-        ROUND_NUMBERS.map((n) => ({
-          game_id: game.id,
-          player_id: pl.id,
-          round_number: n,
-          private_text: defaultPrivatePrompt(n, pl.name),
-        }))
-      );
-
-      const { error: prcErr } = await supabase.from("player_round_content").insert(prcRows);
-      if (prcErr) throw prcErr;
-
       setGameId(game.id);
-      setHostPin(pin);
-      setCodes((players as any[]).map((p: any) => ({ name: p.name, code: p.code })));
+      setHostPin(game.host_pin);
     } catch (e: any) {
       console.error(e);
-      alert(e?.message ?? "Failed to create game.");
+      setErrorMsg(e?.message ?? "Failed to create game.");
     } finally {
       setLoading(false);
     }
@@ -79,37 +48,61 @@ export default function CreateGame() {
 
   return (
     <main style={{ maxWidth: 900, margin: "40px auto", padding: 16 }}>
-      <h2>Create Game Room</h2>
-      <p>Creates a game + 6 player codes + 4 rounds with placeholder content.</p>
+      <h2>Create Game</h2>
+      <p>
+        Choose the number of players. This creates the game and gives you the host Setup link.
+        <br />
+        Players and story content are created later during Setup / Intake.
+      </p>
 
-      <button onClick={onCreate} disabled={loading}>
-        {loading ? "Creating..." : "Create Game Room"}
-      </button>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16 }}>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          Player count:
+          <select
+            value={playerCount}
+            onChange={(e) => setPlayerCount(Number(e.target.value))}
+            style={{ padding: "6px 8px" }}
+            disabled={loading}
+          >
+            {Array.from({ length: 7 }, (_, i) => i + 6).map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button onClick={onCreate} disabled={loading} style={{ padding: "8px 12px" }}>
+          {loading ? "Creating..." : "Create Game"}
+        </button>
+      </div>
+
+      {errorMsg && (
+        <div style={{ marginTop: 14, color: "crimson" }}>
+          {errorMsg}
+        </div>
+      )}
 
       {gameId && hostPin && (
         <>
           <hr style={{ margin: "24px 0" }} />
 
-          <h3>Host Dashboard</h3>
+          <h3>Host Setup Link (send this to host)</h3>
           <p>
-            Open this link:
-            <br />
+            <a href={`/setup/${gameId}?pin=${hostPin}`}>
+              /setup/{gameId}?pin={hostPin}
+            </a>
+          </p>
+
+          <h3>Host Dashboard Link</h3>
+          <p>
             <a href={`/host/${gameId}?pin=${hostPin}`}>
               /host/{gameId}?pin={hostPin}
             </a>
           </p>
 
-          <h3>Player Codes</h3>
-          <ul>
-            {codes.map((c) => (
-              <li key={c.code}>
-                <b>{c.name}</b>: {c.code} — <a href={`/p/${c.code}`}>player page</a>
-              </li>
-            ))}
-          </ul>
-
-          <p style={{ marginTop: 16 }}>
-            Player code entry page: <a href="/join">/join</a>
+          <p style={{ marginTop: 16, opacity: 0.8 }}>
+            Note: Players will be created on the Setup page.
           </p>
         </>
       )}

@@ -42,224 +42,281 @@ export default function PlayerPage() {
   const [showNarration, setShowNarration] = useState(true);
 
   const styles = useMemo(() => {
-    const bg = "#0b0d12";
+    const bg = "#07080a";
     const panel = "rgba(255,255,255,0.06)";
-    const panelBorder = "rgba(255,255,255,0.10)";
+    const panel2 = "rgba(0,0,0,0.24)";
+    const border = "rgba(255,255,255,0.12)";
     const text = "rgba(255,255,255,0.92)";
-    const muted = "rgba(255,255,255,0.70)";
-    const dim = "rgba(255,255,255,0.55)";
-    const accent = "#b11d2a"; // blood red
-    const accent2 = "#d2b48c"; // parchment tan
-    const ink = "rgba(15,10,6,0.92)";
+    const muted = "rgba(255,255,255,0.72)";
+    const dim = "rgba(255,255,255,0.56)";
+    const accent = "#b11d2a"; // red
+    const gold = "rgba(210,180,140,0.95)";
+    const goldBorder = "rgba(210,180,140,0.22)";
+
+    const sans =
+      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    const mono =
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+    const serif =
+      'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
 
     return {
       page: {
         minHeight: "100vh",
         color: text,
         background: `
-          radial-gradient(800px 400px at 20% 10%, rgba(177,29,42,0.14), transparent 60%),
-          radial-gradient(900px 500px at 80% 0%, rgba(210,180,140,0.10), transparent 60%),
-          radial-gradient(900px 500px at 50% 100%, rgba(255,255,255,0.06), transparent 55%),
+          radial-gradient(900px 520px at 15% 10%, rgba(177,29,42,0.18), transparent 60%),
+          radial-gradient(900px 520px at 85% 20%, rgba(210,180,140,0.12), transparent 60%),
+          radial-gradient(900px 520px at 50% 100%, rgba(255,255,255,0.06), transparent 55%),
           ${bg}
         `,
-        padding: "28px 16px 60px",
-        fontFamily:
-          'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
+        padding: "28px 16px 64px",
+        fontFamily: serif,
+        position: "relative",
+        overflow: "hidden",
       } as const,
-      wrap: {
-        maxWidth: 820,
-        margin: "0 auto",
+
+      vignette: {
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        background:
+          "radial-gradient(1200px circle at 50% 30%, rgba(0,0,0,0.0), rgba(0,0,0,0.58) 70%, rgba(0,0,0,0.86) 100%)",
       } as const,
-      topBar: {
+
+      wrap: { maxWidth: 940, margin: "0 auto", position: "relative" } as const,
+
+      topCard: {
+        border: `1px solid ${border}`,
+        background: panel,
+        borderRadius: 18,
+        padding: 18,
+        boxShadow:
+          "0 18px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05)",
+        backdropFilter: "blur(10px)",
+      } as const,
+
+      headerRow: {
         display: "flex",
-        alignItems: "center",
         justifyContent: "space-between",
-        gap: 12,
-        marginBottom: 18,
-      } as const,
-      brand: {
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-      } as const,
-      titleRow: {
-        display: "flex",
-        alignItems: "baseline",
-        gap: 10,
+        alignItems: "flex-end",
+        gap: 14,
         flexWrap: "wrap",
       } as const,
-      h1: {
-        fontSize: 26,
-        letterSpacing: "0.3px",
+
+      brand: { display: "grid", gap: 6 } as const,
+      deadAir: {
         margin: 0,
+        fontSize: 34,
+        letterSpacing: "2px",
+        lineHeight: 1,
+        textTransform: "uppercase",
+        fontWeight: 900,
+      } as const,
+      tagline: {
+        margin: 0,
+        fontFamily: sans,
+        color: accent,
+        letterSpacing: "2px",
+        textTransform: "uppercase",
+        fontSize: 12,
+      } as const,
+
+      title: {
+        margin: 0,
+        fontSize: 22,
+        letterSpacing: "0.4px",
         lineHeight: 1.1,
       } as const,
-      badge: {
+
+      // ✅ No margin here — safe to spread anywhere
+      sub: {
+        color: muted,
+        fontSize: 13,
+        fontFamily: sans,
+        lineHeight: 1.55,
+      } as const,
+
+      // ✅ Use this when you want spacing
+      subSpaced: { marginTop: 10 } as const,
+
+      pills: {
+        display: "flex",
+        gap: 10,
+        flexWrap: "wrap",
+        alignItems: "center",
+        justifyContent: "flex-end",
+      } as const,
+
+      pill: {
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
-        padding: "6px 10px",
+        padding: "7px 10px",
         borderRadius: 999,
-        border: `1px solid ${panelBorder}`,
-        background: panel,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-        fontSize: 12,
+        border: `1px solid ${border}`,
+        background: "rgba(0,0,0,0.18)",
         color: muted,
+        fontFamily: sans,
+        fontSize: 12,
       } as const,
+
+      onAir: {
+        border: `1px solid rgba(177,29,42,0.45)`,
+        background: "rgba(177,29,42,0.14)",
+        color: "rgba(255,255,255,0.92)",
+      } as const,
+
       dot: {
         width: 8,
         height: 8,
         borderRadius: 999,
         background: accent,
-        boxShadow: `0 0 18px rgba(177,29,42,0.5)`,
+        boxShadow: "0 0 18px rgba(177,29,42,0.55)",
       } as const,
-      subtitle: {
-        margin: 0,
-        color: muted,
-        fontSize: 14,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+
+      goldHint: {
+        border: `1px solid ${goldBorder}`,
+        background: "rgba(210,180,140,0.10)",
+        color: gold,
       } as const,
-      card: {
-        background: panel,
-        border: `1px solid ${panelBorder}`,
-        borderRadius: 16,
-        padding: 18,
-        boxShadow:
-          "0 12px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)",
-        backdropFilter: "blur(10px)",
+
+      mono: { fontFamily: mono } as const,
+
+      hr: {
+        height: 1,
+        background:
+          "linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent)",
+        margin: "16px 0",
       } as const,
-      cardHeader: {
+
+      dossier: {
+        marginTop: 14,
+        border: `1px solid ${border}`,
+        background: panel2,
+        borderRadius: 18,
+        padding: 16,
+        boxShadow: "0 18px 55px rgba(0,0,0,0.45)",
+      } as const,
+
+      dossierTop: {
         display: "flex",
-        alignItems: "center",
         justifyContent: "space-between",
         gap: 12,
-        marginBottom: 10,
+        flexWrap: "wrap",
+        alignItems: "center",
       } as const,
-      cardTitle: {
+
+      dossierTitle: {
         margin: 0,
-        fontSize: 16,
-        letterSpacing: "0.2px",
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        fontFamily: sans,
+        fontSize: 13,
+        color: "rgba(255,255,255,0.82)",
+        letterSpacing: "1.8px",
+        textTransform: "uppercase",
       } as const,
-      small: {
-        color: dim,
-        fontSize: 12,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-      } as const,
-      split: {
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        gap: 14,
-        marginTop: 14,
-      } as const,
-      pillBtn: {
+
+      toggleBtn: {
         appearance: "none",
-        border: `1px solid ${panelBorder}`,
-        background: "rgba(255,255,255,0.04)",
-        color: muted,
-        padding: "8px 10px",
-        borderRadius: 999,
+        border: `1px solid ${border}`,
+        background: "rgba(255,255,255,0.06)",
+        color: "rgba(255,255,255,0.88)",
+        padding: "10px 12px",
+        borderRadius: 14,
         cursor: "pointer",
-        fontSize: 12,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        fontFamily: sans,
+        fontSize: 13,
+        lineHeight: 1,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
       } as const,
-      pre: {
-        margin: 0,
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        lineHeight: 1.5,
-      } as const,
-      narrationBox: {
-        padding: 14,
-        borderRadius: 14,
-        border: `1px solid rgba(255,255,255,0.10)`,
-        background: "rgba(255,255,255,0.03)",
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-        color: "rgba(255,255,255,0.86)",
-        fontSize: 14,
-      } as const,
-      privateBox: {
-        padding: 16,
-        borderRadius: 14,
-        border: `1px solid rgba(210,180,140,0.35)`,
-        background: `linear-gradient(180deg, rgba(210,180,140,0.18), rgba(255,255,255,0.04))`,
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.10)",
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-        color: "rgba(255,255,255,0.92)",
-        fontSize: 14,
-      } as const,
+
       privateLabel: {
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
         padding: "6px 10px",
         borderRadius: 999,
-        border: `1px solid rgba(177,29,42,0.35)`,
-        background: "rgba(177,29,42,0.12)",
-        color: "rgba(255,255,255,0.90)",
+        border: `1px solid rgba(177,29,42,0.45)`,
+        background: "rgba(177,29,42,0.14)",
+        color: "rgba(255,255,255,0.92)",
+        fontFamily: sans,
         fontSize: 12,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-        marginBottom: 10,
+        marginTop: 10,
       } as const,
+
+      privateBox: {
+        marginTop: 10,
+        padding: 16,
+        borderRadius: 16,
+        border: `1px solid rgba(210,180,140,0.30)`,
+        background:
+          "linear-gradient(180deg, rgba(210,180,140,0.16), rgba(0,0,0,0.18))",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
+        fontFamily: sans,
+        color: "rgba(255,255,255,0.94)",
+        fontSize: 14,
+      } as const,
+
+      narrationHeader: {
+        marginTop: 14,
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+      } as const,
+
+      narrationTitle: {
+        margin: 0,
+        fontFamily: sans,
+        fontSize: 13,
+        color: "rgba(255,255,255,0.82)",
+        letterSpacing: "1.8px",
+        textTransform: "uppercase",
+      } as const,
+
+      narrationSmall: {
+        fontFamily: sans,
+        fontSize: 12,
+        color: "rgba(255,255,255,0.62)",
+      } as const,
+
+      narrationBox: {
+        marginTop: 10,
+        padding: 14,
+        borderRadius: 16,
+        border: `1px solid rgba(255,255,255,0.10)`,
+        background: "rgba(255,255,255,0.04)",
+        fontFamily: sans,
+        color: "rgba(255,255,255,0.86)",
+        fontSize: 14,
+      } as const,
+
+      pre: {
+        margin: 0,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        lineHeight: 1.55,
+      } as const,
+
       footerHint: {
         marginTop: 14,
         color: dim,
         fontSize: 12,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        fontFamily: sans,
+        lineHeight: 1.5,
       } as const,
-      subtleRule: {
-        height: 1,
-        background:
-          "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)",
-        margin: "14px 0",
-      } as const,
-      mono: {
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      } as const,
-      // Small “case file” tag
-      caseTag: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 10px",
-        borderRadius: 12,
-        border: `1px solid ${panelBorder}`,
-        background: "rgba(0,0,0,0.18)",
-        color: muted,
-        fontSize: 12,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-      } as const,
-      tagAccent: {
-        width: 10,
-        height: 10,
-        borderRadius: 2,
-        background: accent2,
-        boxShadow: "0 0 0 2px rgba(0,0,0,0.25)",
-      } as const,
-      // Responsive tweak
-      gridTwo: {
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        gap: 14,
-      } as const,
-      // We’ll switch to two columns on wider screens via inline @media alternative (simple approach: just keep single column for MVP)
-      dimText: {
-        color: dim,
-      } as const,
-      strong: {
-        color: text,
-        fontWeight: 700,
+
+      errorBox: {
+        border: `1px solid rgba(177,29,42,0.50)`,
+        background: "rgba(177,29,42,0.14)",
+        borderRadius: 16,
+        padding: 12,
+        color: "rgba(255,255,255,0.92)",
+        fontFamily: sans,
+        fontSize: 13,
+        lineHeight: 1.5,
+        marginTop: 14,
       } as const,
     };
   }, []);
@@ -268,8 +325,6 @@ export default function PlayerPage() {
     if (!code) return;
 
     // Don’t re-show loading spinner on polling refreshes.
-    // Keep UX calm and silent.
-    // Only the first call starts with loading=true.
     setLoading((prev) => prev);
 
     // 1) Load player by code
@@ -318,7 +373,7 @@ export default function PlayerPage() {
       return;
     }
 
-    // 5) Load narration from rounds table
+    // 5) Load narration
     const { data: rr, error: rrErr } = await supabase
       .from("rounds")
       .select("narration_text")
@@ -326,7 +381,7 @@ export default function PlayerPage() {
       .eq("round_number", currentRound)
       .single<RoundRow>();
 
-    // 6) Load private prompt from player_round_content table
+    // 6) Load private prompt
     const { data: pr, error: prErr } = await supabase
       .from("player_round_content")
       .select("private_text")
@@ -361,18 +416,25 @@ export default function PlayerPage() {
   if (loading) {
     return (
       <main style={styles.page}>
+        <div style={styles.vignette} />
         <div style={styles.wrap}>
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <h2 style={{ ...styles.cardTitle, margin: 0 }}>Opening the case…</h2>
-              <span style={styles.caseTag}>
-                <span style={styles.tagAccent} />
-                Loading
-              </span>
+          <div style={styles.topCard}>
+            <div style={styles.headerRow}>
+              <div style={styles.brand}>
+                <h1 style={styles.deadAir}>DEAD AIR</h1>
+                <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
+                <h2 style={styles.title}>Opening your file…</h2>
+                <p style={{ ...styles.sub, ...styles.subSpaced }}>
+                  Pulling your briefing from the archives.
+                </p>
+              </div>
+
+              <div style={styles.pills}>
+                <span style={{ ...styles.pill, ...styles.goldHint }}>
+                  Fetching signal
+                </span>
+              </div>
             </div>
-            <p style={{ margin: 0, color: styles.dimText.color as any }}>
-              Pulling your file from the archives.
-            </p>
           </div>
         </div>
       </main>
@@ -382,22 +444,30 @@ export default function PlayerPage() {
   if (!player) {
     return (
       <main style={styles.page}>
+        <div style={styles.vignette} />
         <div style={styles.wrap}>
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <h2 style={{ ...styles.cardTitle, margin: 0 }}>Player not found</h2>
-              <span style={styles.caseTag}>
-                <span style={styles.tagAccent} />
-                Invalid code
-              </span>
+          <div style={styles.topCard}>
+            <div style={styles.headerRow}>
+              <div style={styles.brand}>
+                <h1 style={styles.deadAir}>DEAD AIR</h1>
+                <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
+                <h2 style={styles.title}>Signal lost</h2>
+                <p style={{ ...styles.sub, ...styles.subSpaced }}>
+                  That player code doesn’t exist. Double-check the link.
+                </p>
+              </div>
+
+              <div style={styles.pills}>
+                <span style={styles.pill}>
+                  Code: <span style={styles.mono}>{code || "(missing)"}</span>
+                </span>
+              </div>
             </div>
-            <p style={{ marginTop: 8, marginBottom: 0, color: styles.dimText.color as any }}>
-              That player code doesn’t exist. Double-check the link you were given.
-            </p>
-            <div style={styles.subtleRule} />
-            <p style={{ margin: 0, ...styles.small }}>
-              Code: <span style={styles.mono}>{code || "(missing)"}</span>
-            </p>
+
+            <div style={styles.hr} />
+            <div style={styles.errorBox}>
+              If you were sent a screenshot of a link… yes, that can be a problem. Ask the host for the actual URL.
+            </div>
           </div>
         </div>
       </main>
@@ -408,32 +478,36 @@ export default function PlayerPage() {
   if (!game?.story_generated) {
     return (
       <main style={styles.page}>
+        <div style={styles.vignette} />
         <div style={styles.wrap}>
-          <div style={styles.topBar}>
-            <div style={styles.brand}>
-              <div style={styles.titleRow}>
-                <h1 style={styles.h1}>Case File</h1>
-                <span style={styles.badge}>
+          <div style={styles.topCard}>
+            <div style={styles.headerRow}>
+              <div style={styles.brand}>
+                <h1 style={styles.deadAir}>DEAD AIR</h1>
+                <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
+                <h2 style={styles.title}>Stand by</h2>
+                <p style={{ ...styles.sub, ...styles.subSpaced }}>
+                  Hello, <b>{player.name}</b>. The host is finalizing the case.
+                  <br />
+                  Your instructions will appear automatically when it goes live.
+                </p>
+              </div>
+
+              <div style={styles.pills}>
+                <span style={styles.pill}>
                   <span style={styles.dot} />
-                  Waiting
+                  Status: Waiting
+                </span>
+                <span style={styles.pill}>
+                  Code: <span style={styles.mono}>{player.code}</span>
                 </span>
               </div>
-              <p style={styles.subtitle}>
-                Hi <span style={styles.strong}>{player.name}</span>. The host is finalizing the story.
-              </p>
             </div>
-            <span style={styles.caseTag}>
-              <span style={styles.tagAccent} />
-              Player
-            </span>
-          </div>
 
-          <div style={styles.card}>
-            <h2 style={{ ...styles.cardTitle, marginTop: 0 }}>Stand by…</h2>
-            <p style={{ marginTop: 8, marginBottom: 0, color: styles.dimText.color as any }}>
-              Your instructions will appear automatically when the host releases the case.
+            <div style={styles.hr} />
+            <p style={styles.sub}>
+              Keep this page open. No refresh needed. (Refreshing doesn’t make it happen faster. We tried.)
             </p>
-            <p style={styles.footerHint}>Keep this page open. It updates quietly.</p>
           </div>
         </div>
       </main>
@@ -446,68 +520,73 @@ export default function PlayerPage() {
   if (currentRound === 0) {
     return (
       <main style={styles.page}>
+        <div style={styles.vignette} />
         <div style={styles.wrap}>
-          <div style={styles.topBar}>
-            <div style={styles.brand}>
-              <div style={styles.titleRow}>
-                <h1 style={styles.h1}>Case File</h1>
-                <span style={styles.badge}>
+          <div style={styles.topCard}>
+            <div style={styles.headerRow}>
+              <div style={styles.brand}>
+                <h1 style={styles.deadAir}>DEAD AIR</h1>
+                <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
+                <h2 style={styles.title}>Pre-game</h2>
+                <p style={{ ...styles.sub, ...styles.subSpaced }}>
+                  Hello, <b>{player.name}</b>. The case hasn’t started yet.
+                  <br />
+                  When Round 1 begins, your briefing will appear here.
+                </p>
+              </div>
+
+              <div style={styles.pills}>
+                <span style={styles.pill}>
                   <span style={styles.dot} />
-                  Pre-game
+                  Status: Waiting
+                </span>
+                <span style={styles.pill}>
+                  Code: <span style={styles.mono}>{player.code}</span>
                 </span>
               </div>
-              <p style={styles.subtitle}>
-                Hi <span style={styles.strong}>{player.name}</span>. The game hasn’t started yet.
-              </p>
             </div>
-            <span style={styles.caseTag}>
-              <span style={styles.tagAccent} />
-              Code: <span style={styles.mono}>{player.code}</span>
-            </span>
-          </div>
 
-          <div style={styles.card}>
-            <h2 style={{ ...styles.cardTitle, marginTop: 0 }}>Get ready</h2>
-            <p style={{ marginTop: 8, marginBottom: 0, color: styles.dimText.color as any }}>
-              The host will unlock Round 1 shortly. When it happens, your instructions will appear here.
+            <div style={styles.hr} />
+            <p style={styles.sub}>
+              Pro tip: don’t close this tab. The host controls pacing, and you’ll update quietly when it’s time.
             </p>
-            <p style={styles.footerHint}>Tip: turn up your volume — narration is audio-first.</p>
           </div>
         </div>
       </main>
     );
   }
 
-  // Content missing (or private text missing)
+  // Content missing
   if (!content || !content.private_text) {
     return (
       <main style={styles.page}>
+        <div style={styles.vignette} />
         <div style={styles.wrap}>
-          <div style={styles.topBar}>
-            <div style={styles.brand}>
-              <div style={styles.titleRow}>
-                <h1 style={styles.h1}>Round {currentRound}</h1>
-                <span style={styles.badge}>
-                  <span style={styles.dot} />
+          <div style={styles.topCard}>
+            <div style={styles.headerRow}>
+              <div style={styles.brand}>
+                <h1 style={styles.deadAir}>DEAD AIR</h1>
+                <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
+                <h2 style={styles.title}>Round {currentRound}</h2>
+                <p style={{ ...styles.sub, ...styles.subSpaced }}>
+                  Hello, <b>{player.name}</b>. Your briefing hasn’t been released yet.
+                  <br />
+                  Hold position. It will appear automatically.
+                </p>
+              </div>
+
+              <div style={styles.pills}>
+                <span style={{ ...styles.pill, ...styles.goldHint }}>
                   Awaiting briefing
                 </span>
+                <span style={styles.pill}>
+                  Code: <span style={styles.mono}>{player.code}</span>
+                </span>
               </div>
-              <p style={styles.subtitle}>
-                Hi <span style={styles.strong}>{player.name}</span>. Your round instructions haven’t been released yet.
-              </p>
             </div>
-            <span style={styles.caseTag}>
-              <span style={styles.tagAccent} />
-              Code: <span style={styles.mono}>{player.code}</span>
-            </span>
-          </div>
 
-          <div style={styles.card}>
-            <h2 style={{ ...styles.cardTitle, marginTop: 0 }}>Hold.</h2>
-            <p style={{ marginTop: 8, marginBottom: 0, color: styles.dimText.color as any }}>
-              Your briefing will appear automatically once it’s ready.
-            </p>
-            <p style={styles.footerHint}>No refresh needed.</p>
+            <div style={styles.hr} />
+            <p style={styles.sub}>No refresh needed. You’re not missing anything. Yet.</p>
           </div>
         </div>
       </main>
@@ -517,67 +596,72 @@ export default function PlayerPage() {
   // Normal game view
   return (
     <main style={styles.page}>
+      <div style={styles.vignette} />
       <div style={styles.wrap}>
-        <div style={styles.topBar}>
-          <div style={styles.brand}>
-            <div style={styles.titleRow}>
-              <h1 style={styles.h1}>Round {currentRound}</h1>
-              <span style={styles.badge}>
+        <div style={styles.topCard}>
+          <div style={styles.headerRow}>
+            <div style={styles.brand}>
+              <h1 style={styles.deadAir}>DEAD AIR</h1>
+              <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
+              <h2 style={styles.title}>Round {currentRound}</h2>
+              <p style={{ ...styles.sub, ...styles.subSpaced }}>
+                Agent <b>{player.name}</b>, your instructions are in.
+              </p>
+            </div>
+
+            <div style={styles.pills}>
+              <span style={{ ...styles.pill, ...styles.onAir }}>
                 <span style={styles.dot} />
-                Live
+                ON AIR
+              </span>
+
+              <button
+                type="button"
+                style={styles.toggleBtn}
+                onClick={() => setShowNarration((v) => !v)}
+                aria-label={showNarration ? "Hide narration text" : "Show narration text"}
+                title={showNarration ? "Hide narration text" : "Show narration text"}
+              >
+                {showNarration ? "Hide narration" : "Show narration"}
+              </button>
+
+              <span style={styles.pill}>
+                Code: <span style={styles.mono}>{player.code}</span>
               </span>
             </div>
-            <p style={styles.subtitle}>
-              Agent <span style={styles.strong}>{player.name}</span>, your instructions are in.
+          </div>
+
+          <div style={styles.dossier}>
+            <div style={styles.dossierTop}>
+              <p style={styles.dossierTitle}>Your briefing</p>
+              <span style={styles.privateLabel}>PRIVATE — do not share</span>
+            </div>
+
+            <div style={styles.privateBox}>
+              <pre style={styles.pre}>{content.private_text}</pre>
+            </div>
+
+            {showNarration && (
+              <>
+                <div style={styles.hr} />
+                <div style={styles.narrationHeader}>
+                  <p style={styles.narrationTitle}>Narration (text)</p>
+                  <span style={styles.narrationSmall}>Audio plays on the host screen</span>
+                </div>
+                <div style={styles.narrationBox}>
+                  <pre style={styles.pre}>
+                    {content.narration_text ?? "(Narration not loaded yet)"}
+                  </pre>
+                </div>
+              </>
+            )}
+
+            <p style={styles.footerHint}>
+              Keep this open. The host controls pacing — your screen updates quietly when rounds advance.
+              <br />
+              And yes, it’s supposed to feel a little dramatic.
             </p>
           </div>
-
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button
-              type="button"
-              style={styles.pillBtn}
-              onClick={() => setShowNarration((v) => !v)}
-              aria-label={showNarration ? "Hide narration text" : "Show narration text"}
-              title={showNarration ? "Hide narration text" : "Show narration text"}
-            >
-              {showNarration ? "Hide Narration" : "Show Narration"}
-            </button>
-
-            <span style={styles.caseTag}>
-              <span style={styles.tagAccent} />
-              Code: <span style={styles.mono}>{player.code}</span>
-            </span>
-          </div>
-        </div>
-
-        <div style={styles.card}>
-          <div style={styles.cardHeader}>
-            <h2 style={{ ...styles.cardTitle, margin: 0 }}>Your briefing</h2>
-            <span style={styles.privateLabel}>PRIVATE — do not share</span>
-          </div>
-
-          <div style={styles.privateBox}>
-            <pre style={styles.pre}>{content.private_text}</pre>
-          </div>
-
-          {showNarration && (
-            <>
-              <div style={styles.subtleRule} />
-              <div style={styles.cardHeader}>
-                <h3 style={{ ...styles.cardTitle, margin: 0 }}>Narration (text)</h3>
-                <span style={styles.small}>Audio plays on the host screen</span>
-              </div>
-              <div style={styles.narrationBox}>
-                <pre style={styles.pre}>
-                  {content.narration_text ?? "(Narration not loaded yet)"}
-                </pre>
-              </div>
-            </>
-          )}
-
-          <p style={styles.footerHint}>
-            Keep this open. The host controls pacing — your screen updates quietly when rounds advance.
-          </p>
         </div>
       </div>
     </main>

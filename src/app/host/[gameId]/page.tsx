@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+
+const WELCOME_AUDIO_URL = "/audio/host-briefing.mp3";
 
 type Game = {
   id: string;
@@ -16,6 +18,9 @@ type Player = {
   name: string;
   code: string;
   intake_complete: boolean;
+  invite_email?: string | null;
+  invite_phone?: string | null;
+  intake_mode?: string | null;
 };
 
 type Round = {
@@ -26,9 +31,17 @@ type Round = {
   narration_audio_url_part_b?: string | null;
 };
 
+function fmtTime(sec: number) {
+  if (!sec || !isFinite(sec)) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 export default function Host() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const gameId = (params.gameId as string) || "";
   const pin = searchParams.get("pin") || "";
@@ -38,256 +51,58 @@ export default function Host() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Host briefing audio (custom controls)
+  const briefingRef = useRef<HTMLAudioElement | null>(null);
+  const [briefingPlaying, setBriefingPlaying] = useState(false);
+  const [briefingProgress, setBriefingProgress] = useState(0);
+  const [briefingTime, setBriefingTime] = useState({ current: 0, duration: 0 });
+  const [briefingListened, setBriefingListened] = useState(false);
+
+  // Round start confirm modal
+  const [confirmRound, setConfirmRound] = useState<number | null>(null);
+
+  // Links dropdown
+  const [linksOpen, setLinksOpen] = useState(false);
+  const linksMenuRef = useRef<HTMLDivElement | null>(null);
 
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "http://localhost:3000";
     return window.location.origin;
   }, []);
 
-  const styles = useMemo(() => {
-    const bg = "#0b0d12";
-    const panel = "rgba(255,255,255,0.06)";
-    const border = "rgba(255,255,255,0.10)";
-    const text = "rgba(255,255,255,0.92)";
-    const muted = "rgba(255,255,255,0.72)";
-    const dim = "rgba(255,255,255,0.56)";
-    const accent = "#b11d2a"; // blood red
-    const parchment = "rgba(210,180,140,0.16)";
-    const mono =
-      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    const sans =
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  // ✅ hooks must remain unconditional. Safe values even when game is null.
+  const storyReady = !!game?.story_generated;
+  const currentRound = game?.current_round ?? 0;
 
-    return {
-      page: {
-        minHeight: "100vh",
-        color: text,
-        background: `
-          radial-gradient(900px 520px at 15% 10%, rgba(177,29,42,0.16), transparent 60%),
-          radial-gradient(900px 520px at 85% 0%, rgba(210,180,140,0.10), transparent 60%),
-          radial-gradient(900px 520px at 50% 100%, rgba(255,255,255,0.06), transparent 55%),
-          ${bg}
-        `,
-        padding: "28px 16px 64px",
-        fontFamily:
-          'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
-      } as const,
-      wrap: {
-        maxWidth: 1040,
-        margin: "0 auto",
-      } as const,
+  const sortedPlayers = useMemo(() => {
+    const copy = [...players];
+    copy.sort((a, b) => {
+      const ai = a.intake_complete ? 1 : 0;
+      const bi = b.intake_complete ? 1 : 0;
+      if (ai !== bi) return ai - bi; // pending first
+      return a.name.localeCompare(b.name);
+    });
+    return copy;
+  }, [players]);
 
-      headerRow: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        gap: 12,
-        flexWrap: "wrap",
-        marginBottom: 14,
-      } as const,
-      h1: {
-        margin: 0,
-        fontSize: 28,
-        letterSpacing: "0.4px",
-        lineHeight: 1.1,
-      } as const,
-      sub: {
-        margin: "8px 0 0",
-        color: muted,
-        fontSize: 13,
-        fontFamily: sans,
-      } as const,
+  const currentRoundRow = useMemo(() => {
+    return rounds.find((r) => r.round_number === currentRound);
+  }, [rounds, currentRound]);
 
-      badgeRow: {
-        display: "flex",
-        gap: 10,
-        flexWrap: "wrap",
-        alignItems: "center",
-      } as const,
-      badge: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "7px 10px",
-        borderRadius: 999,
-        border: `1px solid ${border}`,
-        background: panel,
-        color: muted,
-        fontSize: 12,
-        fontFamily: sans,
-      } as const,
-      dot: {
-        width: 8,
-        height: 8,
-        borderRadius: 999,
-        background: accent,
-        boxShadow: `0 0 18px rgba(177,29,42,0.55)`,
-      } as const,
-      mono: { fontFamily: mono } as const,
+  const totalPlayers = players.length;
+  const intakeDone = players.filter((p) => p.intake_complete).length;
+  const allIntakesComplete = totalPlayers > 0 && intakeDone === totalPlayers;
 
-      card: {
-        background: panel,
-        border: `1px solid ${border}`,
-        borderRadius: 16,
-        padding: 16,
-        boxShadow:
-          "0 12px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)",
-        backdropFilter: "blur(10px)",
-      } as const,
-      cardTitle: {
-        margin: 0,
-        fontSize: 15,
-        letterSpacing: "0.2px",
-        fontFamily: sans,
-      } as const,
-      note: {
-        margin: "10px 0 0",
-        color: muted,
-        fontSize: 13,
-        lineHeight: 1.5,
-        fontFamily: sans,
-      } as const,
-      hr: {
-        height: 1,
-        background:
-          "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)",
-        margin: "14px 0",
-      } as const,
+  const playerIntakeLink = (code: string) => `${origin}/intake/p/${code}`;
+  const playerJoinLink = (code: string) => `${origin}/p/${code}`;
 
-      btnRow: {
-        display: "flex",
-        gap: 8,
-        flexWrap: "wrap",
-        marginTop: 10,
-      } as const,
+  const roundsToShow = [0, 1, 2, 3, 4];
 
-      btn: {
-        appearance: "none",
-        border: `1px solid ${border}`,
-        background: "rgba(255,255,255,0.05)",
-        color: text,
-        padding: "10px 12px",
-        borderRadius: 12,
-        cursor: "pointer",
-        fontFamily: sans,
-        fontSize: 13,
-        lineHeight: 1,
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
-      } as const,
-      btnPrimary: {
-        border: `1px solid rgba(177,29,42,0.50)`,
-        background: "rgba(177,29,42,0.18)",
-      } as const,
-      btnGhost: {
-        background: "rgba(0,0,0,0.18)",
-      } as const,
-      btnDisabled: {
-        opacity: 0.45,
-        cursor: "not-allowed",
-      } as const,
-
-      sectionTitle: {
-        margin: "18px 0 10px",
-        fontSize: 16,
-        letterSpacing: "0.2px",
-        fontFamily: sans,
-      } as const,
-
-      pre: {
-        margin: 0,
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        lineHeight: 1.5,
-        fontFamily: sans,
-        fontSize: 13,
-        color: "rgba(255,255,255,0.88)",
-      } as const,
-      preBox: {
-        background: "rgba(0,0,0,0.22)",
-        border: `1px solid rgba(255,255,255,0.10)`,
-        padding: 12,
-        borderRadius: 14,
-      } as const,
-
-      playerList: {
-        margin: 0,
-        padding: 0,
-        listStyle: "none",
-      } as const,
-      playerItem: {
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 12,
-        padding: "12px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        alignItems: "flex-start",
-        flexWrap: "wrap",
-      } as const,
-      playerLeft: { minWidth: 280 } as const,
-      playerNameRow: {
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        flexWrap: "wrap",
-        fontFamily: sans,
-        fontSize: 14,
-      } as const,
-      pillOk: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "5px 10px",
-        borderRadius: 999,
-        border: "1px solid rgba(255,255,255,0.10)",
-        background: "rgba(0,0,0,0.18)",
-        color: muted,
-        fontFamily: sans,
-        fontSize: 12,
-      } as const,
-      pillPrivate: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "5px 10px",
-        borderRadius: 999,
-        border: "1px solid rgba(210,180,140,0.25)",
-        background: parchment,
-        color: "rgba(255,255,255,0.85)",
-        fontFamily: sans,
-        fontSize: 12,
-      } as const,
-      link: {
-        color: "rgba(255,255,255,0.90)",
-        textDecoration: "underline",
-        textUnderlineOffset: 3,
-        fontFamily: sans,
-        fontSize: 12,
-      } as const,
-      small: {
-        color: dim,
-        fontSize: 12,
-        fontFamily: sans,
-        marginTop: 6,
-        lineHeight: 1.4,
-      } as const,
-
-      toast: {
-        position: "fixed",
-        left: "50%",
-        bottom: 18,
-        transform: "translateX(-50%)",
-        background: "rgba(0,0,0,0.68)",
-        border: "1px solid rgba(255,255,255,0.14)",
-        color: "rgba(255,255,255,0.92)",
-        padding: "10px 12px",
-        borderRadius: 12,
-        fontFamily: sans,
-        fontSize: 13,
-        maxWidth: 520,
-        boxShadow: "0 18px 50px rgba(0,0,0,0.55)",
-      } as const,
-    };
-  }, []);
+  const stepCollectActive = !allIntakesComplete;
+  const stepProcessingActive = allIntakesComplete && !storyReady;
+  const stepReadyActive = storyReady;
 
   function showToast(msg: string) {
     setToast(msg);
@@ -303,9 +118,49 @@ export default function Host() {
     }
   }
 
+  useEffect(() => {
+    try {
+      if (!gameId) return;
+      const key = `mm:${gameId}:briefing_listened`;
+      const v = window.localStorage.getItem(key);
+      setBriefingListened(v === "1");
+    } catch {
+      // ignore
+    }
+  }, [gameId]);
+
+  function markBriefingListened() {
+    try {
+      const key = `mm:${gameId}:briefing_listened`;
+      window.localStorage.setItem(key, "1");
+    } catch {}
+    setBriefingListened(true);
+    showToast("Briefing marked complete");
+  }
+
+  // close links dropdown on outside click / ESC
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      if (!linksOpen) return;
+      const t = e.target as Node;
+      if (!linksMenuRef.current) return;
+      if (!linksMenuRef.current.contains(t)) setLinksOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setLinksOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [linksOpen]);
+
   async function load() {
     if (!gameId) return;
     setLoading(true);
+    setErrorMsg(null);
 
     const { data: g, error: gErr } = await supabase
       .from("games")
@@ -318,24 +173,58 @@ export default function Host() {
       setPlayers([]);
       setRounds([]);
       setLoading(false);
+      setErrorMsg(gErr?.message ?? "Game not found.");
       return;
     }
 
-    const { data: ps } = await supabase
+    if (!pin || pin !== g.host_pin) {
+      setGame(null);
+      setPlayers([]);
+      setRounds([]);
+      setLoading(false);
+      setErrorMsg("Wrong or missing host PIN. Use the host link that includes ?pin=...");
+      return;
+    }
+
+    const { data: ps, error: pErr } = await supabase
       .from("players")
-      .select("id,name,code,intake_complete")
+      .select("id,name,code,intake_complete,invite_email,invite_phone,intake_mode")
       .eq("game_id", gameId)
       .order("created_at");
 
-    const { data: rs } = await supabase
+    if (pErr) {
+      setGame(null);
+      setPlayers([]);
+      setRounds([]);
+      setLoading(false);
+      setErrorMsg(pErr.message);
+      return;
+    }
+
+    if ((ps?.length ?? 0) === 0) {
+      setLoading(false);
+      router.replace(`/setup/${gameId}?pin=${pin}`);
+      return;
+    }
+
+    const { data: rs, error: rErr } = await supabase
       .from("rounds")
       .select("round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b")
       .eq("game_id", gameId)
       .order("round_number");
 
-    setGame(g);
-    setPlayers(ps ?? []);
-    setRounds(rs ?? []);
+    if (rErr) {
+      setGame(null);
+      setPlayers([]);
+      setRounds([]);
+      setLoading(false);
+      setErrorMsg(rErr.message);
+      return;
+    }
+
+    setGame(g as Game);
+    setPlayers((ps ?? []) as Player[]);
+    setRounds((rs ?? []) as Round[]);
     setLoading(false);
   }
 
@@ -347,20 +236,61 @@ export default function Host() {
       return;
     }
 
-    if (!game.story_generated) {
-      alert(
-        "Almost there — finish all intake forms, then upload narration + private prompts. Once that’s done, mark the game as ready and you can start Round 1."
-      );
+    if (nextRound > 0 && !game.story_generated) {
+      alert("Locked until your case is ready.");
       return;
     }
 
-    const { error } = await supabase
-      .from("games")
-      .update({ current_round: nextRound })
-      .eq("id", gameId);
-
+    const { error } = await supabase.from("games").update({ current_round: nextRound }).eq("id", gameId);
     if (error) alert(error.message);
     await load();
+  }
+
+  function requestStartRound(nextRound: number) {
+    if (nextRound === 0) {
+      const el = briefingRef.current;
+      if (el && !el.paused) el.pause();
+      setConfirmRound(null);
+      setRound(0);
+      return;
+    }
+
+    if (!storyReady) {
+      alert("Locked until your case is ready.");
+      return;
+    }
+
+    setConfirmRound(nextRound);
+  }
+
+  function openHostIntake() {
+    router.push(`/intake/host/${gameId}?pin=${encodeURIComponent(pin)}`);
+  }
+
+  async function copyAllIntakeLinks() {
+    const lines = sortedPlayers.map((p) => `${p.name}: ${playerIntakeLink(p.code)}`);
+    await copyToClipboard(lines.join("\n"), "Copied all intake links");
+  }
+
+  async function copyAllJoinLinks() {
+    const lines = sortedPlayers.map((p) => `${p.name}: ${playerJoinLink(p.code)}`);
+    await copyToClipboard(lines.join("\n"), "Copied all join links");
+  }
+
+  async function copyAllLinksBoth() {
+    const lines = sortedPlayers.map((p) => `${p.name}\nIntake: ${playerIntakeLink(p.code)}\nJoin:   ${playerJoinLink(p.code)}\n`);
+    await copyToClipboard(lines.join("\n"), "Copied all links");
+  }
+
+  function roundButtonLabel(r: number) {
+    if (r === 0) return "Back to Setup";
+    return `Start Round ${r}`;
+  }
+
+  function roundButtonTitle(r: number) {
+    if (r === 0) return "Return to setup mode";
+    if (!storyReady) return "Locked until your case is ready";
+    return `Start Round ${r}`;
   }
 
   useEffect(() => {
@@ -373,15 +303,15 @@ export default function Host() {
 
   if (!game) {
     return (
-      <main style={styles.page}>
-        <div style={styles.wrap}>
-          <div style={styles.card}>
-            <h2 style={{ marginTop: 0 }}>Game not found</h2>
-            <p style={styles.note}>
-              I looked for gameId: <b>{gameId}</b>
-            </p>
-            <p style={styles.note}>
-              Make sure you are using the host link created on <code>/create</code>.
+      <main className="deadair-page">
+        <div className="deadair-wrap">
+          <div className="deadair-card">
+            <h2 className="deadair-title" style={{ fontSize: 22 }}>
+              Host access blocked
+            </h2>
+            <p className="deadair-sub">{errorMsg ?? "Game not found or you don’t have access."}</p>
+            <p className="deadair-sub">
+              Make sure you’re using the host link that includes <code>?pin=...</code>.
             </p>
           </div>
         </div>
@@ -389,206 +319,668 @@ export default function Host() {
     );
   }
 
-  const currentRound = game.current_round ?? 0;
-  const currentRoundRow = rounds.find((r) => r.round_number === currentRound);
-
-  const totalPlayers = players.length;
-  const intakeDone = players.filter((p) => p.intake_complete).length;
-  const allIntakesComplete = totalPlayers > 0 && intakeDone === totalPlayers;
-
-  const hostIntakeLink = `${origin}/intake/host/${gameId}?pin=${pin}`;
-  const playerIntakeLink = (code: string) => `${origin}/intake/p/${code}`;
-  const playerJoinLink = (code: string) => `${origin}/p/${code}`;
-
-  const roundsToShow = [0, 1, 2, 3, 4];
-
   return (
-    <main style={styles.page}>
-      <div style={styles.wrap}>
+    <main className="deadair-page">
+      <style jsx>{`
+        /* layout helpers */
+        .row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+        .hr {
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+          margin: 14px 0;
+        }
+        .btnRow {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          align-items: center;
+          margin-top: 10px;
+        }
+        .sectionTitle {
+          margin: 18px 0 10px;
+          font-size: 16px;
+          letter-spacing: 0.2px;
+          font-family: var(--sans);
+          color: rgba(255, 255, 255, 0.92);
+        }
+        .mono {
+          font-family: var(--mono);
+        }
+        .small {
+          color: var(--dim);
+          font-size: 12px;
+          font-family: var(--sans);
+          margin-top: 8px;
+          line-height: 1.4;
+        }
+
+        /* top-right status rail */
+        .headerStatus {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          align-items: flex-end;
+          text-align: right;
+        }
+        .statusBadges {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .statusActions {
+          display: flex;
+          gap: 6px;
+          justify-content: flex-end;
+          flex-wrap: wrap;
+        }
+        .statusActions :global(.deadair-btn) {
+          padding: 6px 10px;
+          font-size: 12px;
+        }
+
+        /* badges */
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 10px;
+          border-radius: 999px;
+          border: 1px solid var(--border);
+          background: var(--panel);
+          color: var(--muted);
+          font-size: 12px;
+          font-family: var(--sans);
+          white-space: nowrap;
+        }
+
+        /* briefing console */
+        .briefingWrap {
+          border: 1px solid rgba(210, 180, 140, 0.26);
+          background: linear-gradient(180deg, rgba(210, 180, 140, 0.14), rgba(0, 0, 0, 0.14));
+          border-radius: 16px;
+          padding: 12px;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+        .briefingTop {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .hintPill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-family: var(--sans);
+          font-size: 12px;
+          color: rgba(210, 180, 140, 0.95);
+          border: 1px solid rgba(210, 180, 140, 0.3);
+          background: rgba(210, 180, 140, 0.1);
+          padding: 6px 10px;
+          border-radius: 999px;
+        }
+        .progressOuter {
+          margin-top: 10px;
+          height: 10px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          overflow: hidden;
+        }
+        .progressInner {
+          height: 100%;
+          background: rgba(177, 29, 42, 0.78);
+          width: 0%;
+        }
+        .timeRow {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 8px;
+          font-family: var(--sans);
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        /* timeline */
+        .timelineRow {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 10px;
+        }
+        .timelinePill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(0, 0, 0, 0.18);
+          color: rgba(255, 255, 255, 0.82);
+          font-family: var(--sans);
+          font-size: 12px;
+        }
+        .timelineActive {
+          border: 1px solid rgba(212, 175, 55, 0.28);
+          background: rgba(212, 175, 55, 0.12);
+        }
+
+        /* narration pre */
+        pre {
+          margin: 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+          line-height: 1.5;
+          font-family: var(--sans);
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.88);
+        }
+        .preBox {
+          background: rgba(0, 0, 0, 0.22);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 12px;
+          border-radius: 14px;
+        }
+
+        /* player list */
+        ul {
+          margin: 0;
+          padding: 0;
+          list-style: none;
+        }
+        .playerItem {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 14px 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .playerLeft {
+          min-width: 280px;
+        }
+        .playerNameRow {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          font-family: var(--sans);
+          font-size: 14px;
+        }
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.18);
+          color: var(--muted);
+          font-family: var(--sans);
+          font-size: 12px;
+        }
+        .pillPrivate {
+          border: 1px solid rgba(210, 180, 140, 0.25);
+          background: rgba(210, 180, 140, 0.16);
+          color: rgba(255, 255, 255, 0.86);
+        }
+
+        /* links dropdown */
+        .menuWrap {
+          position: relative;
+          display: inline-flex;
+        }
+        .menu {
+          position: absolute;
+          right: 0;
+          top: calc(100% + 8px);
+          width: 240px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(14, 16, 20, 0.96);
+          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+          padding: 6px;
+          z-index: 40;
+          backdrop-filter: blur(10px);
+        }
+        .menuItem {
+          width: 100%;
+          text-align: left;
+          border: 0;
+          background: transparent;
+          color: rgba(255, 255, 255, 0.9);
+          padding: 10px 10px;
+          border-radius: 10px;
+          cursor: pointer;
+          font-family: var(--sans);
+          font-size: 13px;
+        }
+        .menuItem:hover {
+          background: rgba(255, 255, 255, 0.06);
+        }
+        .menuHint {
+          padding: 8px 10px;
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.55);
+          font-family: var(--sans);
+        }
+
+        /* modal */
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          z-index: 50;
+        }
+        .modalCard {
+          width: 100%;
+          max-width: 520px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(14, 16, 20, 0.92);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+          color: rgba(255, 255, 255, 0.92);
+          padding: 14px;
+          backdrop-filter: blur(10px);
+        }
+        .modalTitle {
+          margin: 0;
+          font-family: var(--sans);
+          font-size: 14px;
+          letter-spacing: 0.2px;
+          text-transform: uppercase;
+        }
+        .modalBody {
+          margin: 10px 0 0;
+          font-family: var(--sans);
+          color: rgba(255, 255, 255, 0.78);
+          line-height: 1.45;
+        }
+        .modalBtnRow {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          margin-top: 14px;
+          flex-wrap: wrap;
+        }
+
+        /* toast */
+        .toast {
+          position: fixed;
+          left: 50%;
+          bottom: 18px;
+          transform: translateX(-50%);
+          background: rgba(0, 0, 0, 0.68);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          color: rgba(255, 255, 255, 0.92);
+          padding: 10px 12px;
+          border-radius: 12px;
+          font-family: var(--sans);
+          font-size: 13px;
+          max-width: 520px;
+          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+          z-index: 60;
+        }
+      `}</style>
+
+      <div className="deadair-wrap">
         {/* Header */}
-        <div style={styles.headerRow}>
+        <div className="row">
           <div>
-            <h1 style={styles.h1}>Host Dashboard</h1>
-            <p style={styles.sub}>
-              Case file: <span style={styles.mono}>{game.id}</span>
+            <h1 className="deadair-title">Dead Air</h1>
+            <p className="deadair-sub" style={{ letterSpacing: "0.3px" }}>
+              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span>{" "}
+              Case file: <span className="mono">{game.id}</span>
             </p>
           </div>
 
-          <div style={styles.badgeRow}>
-            <span style={styles.badge}>
-              <span style={styles.dot} />
-              Round: <b>{currentRound}</b>
-            </span>
-            <span style={styles.badge}>
-              Intake: <b>{intakeDone}</b>/<b>{totalPlayers}</b>
-            </span>
-            <span style={styles.badge}>
-              PIN: <b>{pin ? "✅ detected" : "❌ missing"}</b>
-            </span>
+          {/* ✅ moved to top-right */}
+          <div className="headerStatus">
+            <div className="statusBadges">
+              <span className="badge">
+                Phase: <b>{currentRound === 0 ? "Setup" : `Round ${currentRound}`}</b>
+              </span>
+
+              <span className="badge">
+                Intake: <b>{intakeDone}</b>/<b>{totalPlayers}</b>
+              </span>
+
+              <span className="badge">
+                PIN: <b>{pin ? "✓" : "✕"}</b>
+              </span>
+            </div>
+
+            <div className="statusActions">
+              <button className="deadair-btn deadair-btnPrimary" onClick={openHostIntake}>
+                Open Host Intake
+              </button>
+
+              <button className="deadair-btn deadair-btnGhost" onClick={load}>
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Status card */}
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Status</h3>
+        {/* Status */}
+        <div className="deadair-card">
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+            <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>Status</h3>
+            <div className="small">
+              If you know your guests well enough, you can fill their intakes yourself. If not… they can do it. We’re flexible.
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div className="timelineRow">
+            <span className={`timelinePill ${stepCollectActive ? "timelineActive" : ""}`}>
+              🧾 Collect Intakes <span style={{ opacity: 0.8 }}>({intakeDone}/{totalPlayers})</span>
+            </span>
+            <span className={`timelinePill ${stepProcessingActive ? "timelineActive" : ""}`}>
+              🕯️ Processing <span style={{ opacity: 0.8 }}>(24–48 hrs)</span>
+            </span>
+            <span className={`timelinePill ${stepReadyActive ? "timelineActive" : ""}`}>🩸 Ready to Play</span>
+          </div>
+
+          {/* Host Briefing (Setup only) */}
+          {currentRound === 0 && (
+            <>
+              <div style={{ marginTop: 12 }}>
+                <div className="briefingWrap">
+                  <div className="briefingTop">
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <span className="deadair-chip">🎧 Host Briefing</span>
+                      <span className="deadair-sub" style={{ margin: 0 }}>
+                        Listen first — it prevents “why is nothing working” energy.
+                      </span>
+                    </div>
+                    <span className="hintPill">{briefingListened ? "✅ listened" : "📌 play me first"}</span>
+                  </div>
+
+                  <audio
+                    ref={briefingRef}
+                    src={WELCOME_AUDIO_URL}
+                    preload="metadata"
+                    onPlay={() => setBriefingPlaying(true)}
+                    onPause={() => setBriefingPlaying(false)}
+                    onEnded={() => {
+                      setBriefingPlaying(false);
+                      markBriefingListened();
+                    }}
+                    onTimeUpdate={(e) => {
+                      const el = e.currentTarget;
+                      const d = el.duration || 0;
+                      const c = el.currentTime || 0;
+                      setBriefingTime({ current: c, duration: d });
+                      setBriefingProgress(d > 0 ? c / d : 0);
+                    }}
+                    style={{ display: "none" }}
+                  />
+
+                  <div className="btnRow">
+                    <button
+                      className="deadair-btn deadair-btnPrimary"
+                      onClick={() => {
+                        const el = briefingRef.current;
+                        if (!el) return;
+                        if (el.paused) el.play();
+                        else el.pause();
+                      }}
+                    >
+                      {briefingPlaying ? "Pause briefing" : "Play briefing"}
+                    </button>
+
+                    <button
+                      className="deadair-btn deadair-btnGhost"
+                      onClick={() => {
+                        const el = briefingRef.current;
+                        if (!el) return;
+                        el.currentTime = 0;
+                        el.pause();
+                      }}
+                    >
+                      Restart
+                    </button>
+
+                    {!briefingListened && (
+                      <button
+                        className="deadair-btn"
+                        style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }}
+                        onClick={markBriefingListened}
+                      >
+                        Mark listened
+                      </button>
+                    )}
+
+                    <span className="small" style={{ marginTop: 0 }}>
+                      Finish intakes → we process (24–48 hrs) → email when ready → access for 6 months.
+                    </span>
+                  </div>
+
+                  <div className="progressOuter">
+                    <div className="progressInner" style={{ width: `${Math.round(briefingProgress * 100)}%` }} />
+                  </div>
+
+                  <div className="timeRow">
+                    <span>{fmtTime(briefingTime.current)}</span>
+                    <span>{fmtTime(briefingTime.duration)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hr" />
+            </>
+          )}
 
           {!allIntakesComplete ? (
-            <p style={styles.note}>
+            <p className="deadair-sub" style={{ marginTop: 10 }}>
               Waiting on intake forms: <b>{intakeDone}</b> / <b>{totalPlayers}</b> complete.
               <br />
-              Send players their intake links below, or fill them yourself using the host intake page.
+              Send players their links below, or fill them yourself using <b>Open Host Intake</b>.
             </p>
-          ) : !game.story_generated ? (
-            <p style={styles.note}>
+          ) : !storyReady ? (
+            <p className="deadair-sub" style={{ marginTop: 10 }}>
               All intake forms are complete.
               <br />
-              Next step: upload the narration + private prompts, then mark the game as ready to start.
+              We’ve been notified and will begin processing your case. Please allow <b>24–48 hours</b>.
+              <br />
+              You’ll receive an email when it’s ready. (No, you can’t “just peek” at the ending.)
             </p>
           ) : (
-            <p style={styles.note}>
+            <p className="deadair-sub" style={{ marginTop: 10 }}>
               Story is ready. You can start Round 1 whenever you want.
             </p>
           )}
 
-          {!allIntakesComplete && (
-            <div style={styles.btnRow}>
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost }}
-                onClick={() => copyToClipboard(hostIntakeLink, "Copied host intake link")}
-              >
-                Copy host intake link
-              </button>
-              <span style={{ ...styles.sub, margin: 0 }}>
-                (Host fills on behalf of players)
-              </span>
-            </div>
-          )}
+          <div className="hr" />
 
-          <div style={styles.hr} />
-
-          <div style={styles.btnRow}>
+          <div className="btnRow">
             {roundsToShow.map((r) => {
-              const disabled = !game.story_generated;
               const isCurrent = r === currentRound;
+              const disabled = r > 0 && !storyReady;
+
               return (
                 <button
                   key={r}
-                  onClick={() => setRound(r)}
+                  onClick={() => requestStartRound(r)}
                   disabled={disabled}
-                  style={{
-                    ...styles.btn,
-                    ...(isCurrent ? styles.btnPrimary : {}),
-                    ...(disabled ? styles.btnDisabled : {}),
-                  }}
-                  title={
-                    disabled ? "Finish intakes and upload content first" : `Set current round to ${r}`
-                  }
+                  className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
+                  title={roundButtonTitle(r)}
                 >
-                  Set Round {r}
+                  {roundButtonLabel(r)}
                 </button>
               );
             })}
           </div>
 
-          {!game.story_generated && (
-            <p style={{ ...styles.small, marginTop: 10 }}>
-              Rounds will unlock once the story is ready to play.
+          {!storyReady && (
+            <p className="small" style={{ marginTop: 10 }}>
+              Rounds 1–4 unlock once your case is ready.
             </p>
           )}
         </div>
 
         {/* Narration */}
-        <h3 style={styles.sectionTitle}>Narration for Current Round</h3>
-        <div style={styles.card}>
+        <h3 className="sectionTitle">Narration for Current Phase</h3>
+        <div className="deadair-card">
           {currentRound === 0 ? (
-            <p style={styles.note}>Pre-game. Set Round 1 to begin.</p>
+            <p className="deadair-sub">Setup mode. Start Round 1 when your case is ready.</p>
           ) : (
             <>
               {currentRoundRow?.narration_audio_url ? (
                 <>
-                  <div style={styles.pillOk}>
-                    <span style={styles.dot} />
+                  <div className="badge" style={{ display: "inline-flex", marginBottom: 10 }}>
+                    <span className="deadair-dot" />
                     Audio ready
                   </div>
-                  <audio
-                    controls
-                    src={currentRoundRow.narration_audio_url ?? undefined}
-                    style={{ width: "100%", marginTop: 10 }}
-                  />
+
+                  <audio controls src={currentRoundRow.narration_audio_url ?? undefined} style={{ width: "100%" }} />
 
                   {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
                     <div style={{ marginTop: 12 }}>
-                      <div style={{ ...styles.pillPrivate, marginBottom: 8 }}>
-                        Round 4 Reveal — Part B
+                      <div className="deadair-chip" style={{ marginBottom: 8 }}>
+                        Reveal — Part B (play after accusations)
                       </div>
-                      <audio
-                        controls
-                        src={currentRoundRow.narration_audio_url_part_b ?? undefined}
-                        style={{ width: "100%" }}
-                      />
+                      <audio controls src={currentRoundRow.narration_audio_url_part_b ?? undefined} style={{ width: "100%" }} />
                     </div>
                   ) : null}
                 </>
               ) : (
-                <p style={styles.note}>No audio URL stored for this round yet.</p>
+                <p className="deadair-sub">No audio URL stored for this round yet.</p>
               )}
 
-              <div style={styles.hr} />
+              <div className="hr" />
 
-              <div style={{ ...styles.small, marginTop: 0 }}>
+              <div className="small" style={{ marginTop: 0 }}>
                 Narration text (reference)
               </div>
-              <div style={{ ...styles.preBox, marginTop: 10 }}>
-                <pre style={styles.pre}>
-                  {currentRoundRow?.narration_text ?? "(No narration stored yet)"}
-                </pre>
+              <div className="preBox" style={{ marginTop: 10 }}>
+                <pre>{currentRoundRow?.narration_text ?? "(No narration stored yet)"}</pre>
               </div>
             </>
           )}
         </div>
 
         {/* Players */}
-        <h3 style={styles.sectionTitle}>Players</h3>
-        <div style={styles.card}>
-          <ul style={styles.playerList}>
-            {players.map((p) => (
-              <li key={p.id} style={styles.playerItem}>
-                <div style={styles.playerLeft}>
-                  <div style={styles.playerNameRow}>
+        <h3 className="sectionTitle">Players</h3>
+        <div className="deadair-card">
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="small">Pending players float to the top. (This is not a judgment. Mostly.)</div>
+
+            {/* ✅ dropdown replaces multiple copy buttons */}
+            <div className="btnRow" style={{ marginTop: 0 }}>
+              <div className="menuWrap" ref={linksMenuRef}>
+                <button
+                  className="deadair-btn deadair-btnGhost"
+                  onClick={() => setLinksOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={linksOpen}
+                >
+                  Links ▾
+                </button>
+
+                {linksOpen && (
+                  <div className="menu" role="menu">
+                    <button
+                      className="menuItem"
+                      role="menuitem"
+                      onClick={async () => {
+                        setLinksOpen(false);
+                        await copyAllIntakeLinks();
+                      }}
+                    >
+                      Copy all intake links
+                    </button>
+                    <button
+                      className="menuItem"
+                      role="menuitem"
+                      onClick={async () => {
+                        setLinksOpen(false);
+                        await copyAllJoinLinks();
+                      }}
+                    >
+                      Copy all join links
+                    </button>
+                    <button
+                      className="menuItem"
+                      role="menuitem"
+                      onClick={async () => {
+                        setLinksOpen(false);
+                        await copyAllLinksBoth();
+                      }}
+                    >
+                      Copy all (intake + join)
+                    </button>
+
+                    <div className="menuHint">Tip: paste into iMessage / group chat / email.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="hr" />
+
+          <ul>
+            {sortedPlayers.map((p) => (
+              <li key={p.id} className="playerItem">
+                <div className="playerLeft">
+                  <div className="playerNameRow">
                     <b>{p.name}</b>
-                    <span style={styles.pillOk}>
-                      code: <span style={styles.mono}>{p.code}</span>
+
+                    <span className="pill">
+                      code: <span className="mono">{p.code}</span>
                     </span>
-                    <span style={styles.pillPrivate}>
-                      intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
-                    </span>
-                    <a href={`/p/${p.code}`} style={styles.link}>
-                      open player view
-                    </a>
+
+                    <span className={`pill pillPrivate`}>intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
+
+                    <button
+                      className="deadair-btn deadair-btnGhost"
+                      style={{ padding: "8px 10px" }}
+                      onClick={() => router.push(`/p/${p.code}`)}
+                      title="Open the player page"
+                    >
+                      👤 Open player view
+                    </button>
                   </div>
 
-                  <div style={styles.small}>
-                    Intake link: <span style={styles.mono}>{playerIntakeLink(p.code)}</span>
-                    <br />
-                    Join link: <span style={styles.mono}>{playerJoinLink(p.code)}</span>
-                  </div>
+                  {(p.invite_email || p.invite_phone) && (
+                    <div className="small">
+                      Invite:{" "}
+                      <span className="mono">
+                        {p.invite_email ?? ""}
+                        {p.invite_email && p.invite_phone ? " • " : ""}
+                        {p.invite_phone ?? ""}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div style={styles.btnRow}>
+                <div className="btnRow">
                   <button
-                    style={{ ...styles.btn, ...styles.btnGhost }}
-                    onClick={() =>
-                      copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)
-                    }
+                    className="deadair-btn deadair-btnGhost"
+                    onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
                   >
                     Copy intake link
                   </button>
 
                   <button
-                    style={{ ...styles.btn, ...styles.btnPrimary }}
-                    onClick={() =>
-                      copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)
-                    }
+                    className="deadair-btn deadair-btnPrimary"
+                    onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
                   >
                     Copy join link
                   </button>
@@ -598,7 +990,40 @@ export default function Host() {
           </ul>
         </div>
 
-        {toast && <div style={styles.toast}>{toast}</div>}
+        {toast && <div className="toast">{toast}</div>}
+
+        {/* Confirm modal */}
+        {confirmRound !== null && (
+          <div className="modalOverlay" onClick={() => setConfirmRound(null)} role="dialog" aria-modal="true">
+            <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+              <h4 className="modalTitle">Start Round {confirmRound}?</h4>
+              <p className="modalBody">
+                Starting a round pushes new instructions to every player.
+                <br />
+                Make sure everyone’s ready (and ideally not “missing in action”).
+              </p>
+
+              <div className="modalBtnRow">
+                <button className="deadair-btn deadair-btnGhost" onClick={() => setConfirmRound(null)}>
+                  Cancel
+                </button>
+
+                <button
+                  className="deadair-btn deadair-btnPrimary"
+                  onClick={() => {
+                    const el = briefingRef.current;
+                    if (el && !el.paused) el.pause();
+                    const r = confirmRound;
+                    setConfirmRound(null);
+                    setRound(r);
+                  }}
+                >
+                  Start Round {confirmRound}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
