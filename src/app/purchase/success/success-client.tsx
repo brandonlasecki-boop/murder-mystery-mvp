@@ -1,13 +1,27 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+function maskPin(pin: string) {
+  const p = (pin ?? "").trim();
+  if (!p) return "";
+  if (p.length <= 2) return "••";
+  return `${p.slice(0, 1)}••••${p.slice(-1)}`;
+}
 
 export default function SuccessClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  const sessionId = sp?.get("session_id") || sp?.get("sessionId") || "";
+  const code = (sp?.get("code") || "").trim();
+  const gameId = (sp?.get("gameId") || "").trim();
+  const pin = (sp?.get("pin") || "").trim();
+
+  // In case you later switch to Stripe session_id redirects
+  const sessionId = (sp?.get("session_id") || sp?.get("sessionId") || "").trim();
+
+  const [copied, setCopied] = useState<string | null>(null);
 
   const theme = useMemo(() => {
     return {
@@ -26,6 +40,25 @@ export default function SuccessClient() {
     };
   }, []);
 
+  async function copy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 1200);
+    } catch {
+      setCopied("Copy failed");
+      setTimeout(() => setCopied(null), 1200);
+    }
+  }
+
+  function openHost() {
+    if (!gameId || !pin) {
+      router.push("/"); // fallback: use purchase code entry on landing
+      return;
+    }
+    router.push(`/host/${encodeURIComponent(gameId)}?pin=${encodeURIComponent(pin)}`);
+  }
+
   return (
     <main
       style={{
@@ -41,7 +74,7 @@ export default function SuccessClient() {
           box-sizing: border-box;
         }
         .wrap {
-          max-width: 900px;
+          max-width: 980px;
           margin: 0 auto;
           padding: 22px 0 72px;
         }
@@ -85,7 +118,7 @@ export default function SuccessClient() {
           color: ${theme.muted};
           line-height: 1.55;
           font-size: 15px;
-          max-width: 70ch;
+          max-width: 78ch;
         }
         .row {
           margin-top: 14px;
@@ -117,52 +150,141 @@ export default function SuccessClient() {
         .btnPrimary:hover {
           background: rgba(177, 29, 42, 0.9);
         }
-        .meta {
+        .grid {
           margin-top: 14px;
-          padding: 12px;
-          border-radius: 14px;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+        @media (max-width: 900px) {
+          .grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        .panel {
+          border-radius: 16px;
           border: 1px solid rgba(255, 255, 255, 0.12);
           background: rgba(0, 0, 0, 0.18);
-          color: rgba(255, 255, 255, 0.74);
-          font-size: 13px;
-          line-height: 1.45;
+          padding: 14px;
+        }
+        .label {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.76);
           font-family: ${theme.mono};
+          letter-spacing: 0.6px;
+          text-transform: uppercase;
+        }
+        .value {
+          margin-top: 8px;
+          font-family: ${theme.mono};
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.92);
+          overflow-wrap: anywhere;
         }
         .muted {
+          margin-top: 8px;
           color: ${theme.dim};
+          font-size: 12px;
+          line-height: 1.45;
         }
-        code {
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(0, 0, 0, 0.14);
+          color: rgba(255, 255, 255, 0.82);
+          font-size: 12px;
           font-family: ${theme.mono};
+        }
+        .warn {
+          margin-top: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(177, 29, 42, 0.35);
+          background: rgba(177, 29, 42, 0.12);
+          color: rgba(255, 255, 255, 0.9);
+          font-size: 13px;
+          line-height: 1.45;
         }
       `}</style>
 
       <div className="wrap">
         <div className="card">
           <div className="glow" aria-hidden />
-          <div className="kicker">PAYMENT CONFIRMED</div>
-          <h1 className="h1">You’re in. Your case is being prepared.</h1>
+          <div className="kicker">PURCHASE COMPLETE</div>
+          <h1 className="h1">You’re in. Don’t lose your code.</h1>
           <p className="sub">
-            Next step: use your purchase code on the homepage to open the host dashboard.
+            This is your handoff screen. Copy your purchase code, then open your host dashboard.
           </p>
 
           <div className="row">
-            <button className="btn btnPrimary" onClick={() => router.push("/")}>
-              Back to Dead Air →
+            <button className="btn btnPrimary" onClick={openHost}>
+              Open host dashboard →
+            </button>
+            <button className="btn" onClick={() => router.push("/")}>
+              Home
             </button>
             <button className="btn" onClick={() => router.push("/pricing")}>
               Pricing
             </button>
+
+            {copied ? <span className="pill">✅ {copied}</span> : null}
           </div>
 
-          <div className="meta">
-            <div>
-              <span className="muted">Session:</span>{" "}
-              {sessionId ? sessionId : <span className="muted">(none found in URL)</span>}
+          <div className="grid">
+            <div className="panel">
+              <div className="label">Purchase code</div>
+              <div className="value">{code || "(missing)"}</div>
+              <div className="row">
+                <button className="btn" onClick={() => copy(code || "", "Code copied")} disabled={!code}>
+                  Copy code
+                </button>
+              </div>
+              <div className="muted">You can also paste this on the homepage under “Host access”.</div>
             </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Expected Stripe style redirect: <code>?session_id=...</code>
+
+            <div className="panel">
+              <div className="label">Game info</div>
+              <div className="value">gameId: {gameId || "(missing)"}</div>
+              <div className="value">pin: {pin ? maskPin(pin) : "(missing)"}</div>
+              <div className="row">
+                <button
+                  className="btn"
+                  onClick={() =>
+                    copy(
+                      gameId && pin ? `/host/${gameId}?pin=${pin}` : "",
+                      "Host link copied"
+                    )
+                  }
+                  disabled={!gameId || !pin}
+                >
+                  Copy host link
+                </button>
+              </div>
+              <div className="muted">If you’re sending this to yourself, copy the host link.</div>
             </div>
           </div>
+
+          {!code || !gameId || !pin ? (
+            <div className="warn">
+              Missing data in the URL. That’s okay for now — go home and use your purchase code entry.
+              <br />
+              <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                (If you’re coming from mock purchase, the API should send code/gameId/pin.)
+              </span>
+              {sessionId ? (
+                <>
+                  <br />
+                  <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                    Stripe session detected: {sessionId}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </main>
