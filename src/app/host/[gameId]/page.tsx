@@ -45,6 +45,7 @@ function fmtTime(sec: number) {
  * - -10s / +10s
  * - Progress bar (click-to-seek)
  * - Timecode
+ * - Optional "Dim room" overlay while playing
  */
 function AudioConsole(props: {
   title: string;
@@ -52,8 +53,11 @@ function AudioConsole(props: {
   src?: string | null;
   hintRight?: string;
   compact?: boolean;
+  dimEnabled: boolean;
+  onToggleDim: () => void;
+  onPlayingChange?: (playing: boolean) => void;
 }) {
-  const { title, subtitle, src, hintRight, compact } = props;
+  const { title, subtitle, src, hintRight, compact, dimEnabled, onToggleDim, onPlayingChange } = props;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -62,7 +66,6 @@ function AudioConsole(props: {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // when src changes (e.g., round switch), reset UI
     setPlaying(false);
     setProgress(0);
     setTime({ current: 0, duration: 0 });
@@ -78,6 +81,10 @@ function AudioConsole(props: {
     }
   }, [src]);
 
+  useEffect(() => {
+    onPlayingChange?.(playing);
+  }, [playing, onPlayingChange]);
+
   function syncFromEl(el: HTMLAudioElement) {
     const d = el.duration || 0;
     const c = el.currentTime || 0;
@@ -85,19 +92,23 @@ function AudioConsole(props: {
     setProgress(d > 0 ? c / d : 0);
   }
 
-  function toggle() {
+  async function toggle() {
     const el = audioRef.current;
     if (!el || !src) return;
-    if (el.paused) el.play();
-    else el.pause();
+    try {
+      if (el.paused) await el.play();
+      else el.pause();
+    } catch {
+      // ignore
+    }
   }
 
-  function restart() {
+  async function restart() {
     const el = audioRef.current;
     if (!el || !src) return;
     try {
       el.currentTime = 0;
-      el.play();
+      await el.play();
     } catch {
       // ignore
     }
@@ -130,19 +141,29 @@ function AudioConsole(props: {
 
   return (
     <div className={`acWrap ${compact ? "acCompact" : ""} ${disabled ? "acDisabled" : ""}`}>
-      <div className="acTop">
-        <div className="acLeft">
-          <div className="acTitleRow">
-            <span className={`acLive ${playing ? "acLiveOn" : ""}`}>
-              <span className="acDot" />
-              LIVE
-            </span>
-            <div className="acTitle">{title}</div>
-          </div>
+      <div className="acHeader">
+        <div className="acHeaderLeft">
+          <div className="acTitle">{title}</div>
           {subtitle ? <div className="acSub">{subtitle}</div> : null}
         </div>
 
-        {hintRight ? <div className="acHint">{hintRight}</div> : null}
+        <div className="acHeaderRight">
+          <div className={`acLive ${playing ? "acLiveOn" : ""}`}>
+            <span className={`acDot ${playing ? "acDotPulse" : ""}`} />
+            LIVE
+          </div>
+
+          {hintRight ? <div className="acHint">{hintRight}</div> : null}
+
+          <button
+            className={`deadair-btn deadair-btnGhost acDimBtn ${dimEnabled ? "acDimOn" : ""}`}
+            onClick={onToggleDim}
+            type="button"
+            title={dimEnabled ? "Turn off dim mode" : "Dim the room while narration plays"}
+          >
+            {dimEnabled ? "Dim: On" : "Dim room"}
+          </button>
+        </div>
       </div>
 
       <audio
@@ -162,7 +183,7 @@ function AudioConsole(props: {
 
       <div className="acControls">
         <button
-          className="deadair-btn deadair-btnPrimary"
+          className="deadair-btn deadair-btnPrimary acPlayBtn"
           onClick={toggle}
           disabled={disabled}
           title={disabled ? "No audio URL stored yet" : playing ? "Pause narration" : "Play narration"}
@@ -205,8 +226,8 @@ function AudioConsole(props: {
       </div>
 
       <div className="acTimeRow">
-        <span>{fmtTime(time.current)}</span>
-        <span>{fmtTime(time.duration)}</span>
+        <span className="acTime">{fmtTime(time.current)}</span>
+        <span className="acTime">{fmtTime(time.duration)}</span>
       </div>
     </div>
   );
@@ -239,6 +260,10 @@ export default function Host() {
 
   // Narration text toggle (hidden by default)
   const [showNarrationText, setShowNarrationText] = useState(false);
+
+  // ✅ Dim room toggle (user-controlled) + whether any narration is playing
+  const [dimRoomEnabled, setDimRoomEnabled] = useState(false);
+  const [narrationPlaying, setNarrationPlaying] = useState(false);
 
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "http://localhost:3000";
@@ -280,6 +305,7 @@ export default function Host() {
   // Reset narration text toggle when round changes (reduces clutter)
   useEffect(() => {
     setShowNarrationText(false);
+    setNarrationPlaying(false);
   }, [currentRound]);
 
   function showToast(msg: string) {
@@ -463,8 +489,10 @@ export default function Host() {
     );
   }
 
+  const dimActive = currentRound > 0 && dimRoomEnabled && narrationPlaying;
+
   return (
-    <main className="deadair-page">
+    <main className={`deadair-page ${dimActive ? "dimActive" : ""}`}>
       <style jsx>{`
         /* ✅ mobile-friendly base */
         :global(.deadair-wrap) {
@@ -477,6 +505,31 @@ export default function Host() {
         :global(.deadair-btnGhost),
         :global(.deadair-btnDisabled) {
           min-height: 44px;
+        }
+
+        /* ✅ Dim room overlay (only when enabled + narration playing) */
+        .dimOverlay {
+          position: fixed;
+          inset: 0;
+          background: radial-gradient(
+              900px 520px at 50% 10%,
+              rgba(177, 29, 42, 0.18),
+              transparent 60%
+            ),
+            rgba(0, 0, 0, 0.72);
+          z-index: 15;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 240ms ease;
+        }
+        :global(.dimActive) .dimOverlay {
+          opacity: 1;
+        }
+
+        /* ensure content sits above overlay */
+        .contentAboveDim {
+          position: relative;
+          z-index: 20;
         }
 
         .row {
@@ -799,33 +852,45 @@ export default function Host() {
 
         /* ✅ Cinematic Audio Console (Rounds 1–4) */
         .acWrap {
-          border-radius: 16px;
-          padding: 12px;
-          border: 1px solid rgba(212, 175, 55, 0.22);
-          background: linear-gradient(
-            180deg,
-            rgba(212, 175, 55, 0.10),
-            rgba(0, 0, 0, 0.18)
-          );
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 55px rgba(0, 0, 0, 0.45);
+          border-radius: 18px;
+          padding: 14px;
+          border: 1px solid rgba(212, 175, 55, 0.24);
+          background: linear-gradient(180deg, rgba(16, 18, 22, 0.62), rgba(0, 0, 0, 0.22));
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 60px rgba(0, 0, 0, 0.55);
+          position: relative;
+          overflow: hidden;
+        }
+        .acWrap:before {
+          content: "";
+          position: absolute;
+          inset: -120px -120px auto -120px;
+          height: 240px;
+          background: radial-gradient(520px 240px at 30% 40%, rgba(212, 175, 55, 0.16), transparent 60%);
+          pointer-events: none;
+          opacity: 0.9;
         }
         .acCompact {
-          padding: 10px;
+          padding: 12px;
         }
         .acDisabled {
-          opacity: 0.7;
+          opacity: 0.72;
         }
-        .acTop {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 10px;
-          flex-wrap: wrap;
+
+        .acHeader {
+          position: relative;
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 12px;
+          align-items: start;
         }
-        .acTitleRow {
-          display: flex;
+        .acHeaderLeft {
+          min-width: 0;
+        }
+        .acHeaderRight {
+          display: inline-flex;
           align-items: center;
           gap: 10px;
+          justify-content: flex-end;
           flex-wrap: wrap;
         }
         .acTitle {
@@ -834,14 +899,15 @@ export default function Host() {
           color: rgba(255, 255, 255, 0.92);
           letter-spacing: 0.2px;
           font-size: 14px;
+          line-height: 1.25;
         }
         .acSub {
           margin-top: 6px;
-          color: rgba(255, 255, 255, 0.70);
+          color: rgba(255, 255, 255, 0.72);
           font-family: var(--sans);
           font-size: 12px;
           line-height: 1.35;
-          max-width: 70ch;
+          max-width: 72ch;
         }
         .acHint {
           display: inline-flex;
@@ -849,13 +915,14 @@ export default function Host() {
           gap: 8px;
           font-family: var(--mono);
           font-size: 12px;
-          color: rgba(255, 255, 255, 0.74);
+          color: rgba(255, 255, 255, 0.78);
           border: 1px solid rgba(255, 255, 255, 0.14);
           background: rgba(0, 0, 0, 0.18);
           padding: 6px 10px;
           border-radius: 999px;
           white-space: nowrap;
         }
+
         .acLive {
           display: inline-flex;
           align-items: center;
@@ -864,30 +931,31 @@ export default function Host() {
           font-size: 12px;
           letter-spacing: 1.6px;
           text-transform: uppercase;
-          color: rgba(212, 175, 55, 0.92);
-          border: 1px solid rgba(212, 175, 55, 0.26);
-          background: rgba(212, 175, 55, 0.10);
+          color: rgba(212, 175, 55, 0.95);
+          border: 1px solid rgba(212, 175, 55, 0.34);
+          background: rgba(212, 175, 55, 0.12);
           padding: 6px 10px;
           border-radius: 999px;
           user-select: none;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         }
         .acDot {
           width: 8px;
           height: 8px;
           border-radius: 999px;
-          background: rgba(177, 29, 42, 0.92);
-          box-shadow: 0 0 0 3px rgba(177, 29, 42, 0.12);
+          background: rgba(177, 29, 42, 0.95);
+          box-shadow: 0 0 0 3px rgba(177, 29, 42, 0.14);
         }
-        .acLiveOn .acDot {
-          animation: pulse 1.2s ease-in-out infinite;
+        .acDotPulse {
+          animation: acPulse 1.15s ease-in-out infinite;
         }
-        @keyframes pulse {
+        @keyframes acPulse {
           0% {
             transform: scale(1);
             opacity: 0.85;
           }
           50% {
-            transform: scale(1.25);
+            transform: scale(1.35);
             opacity: 1;
           }
           100% {
@@ -896,15 +964,29 @@ export default function Host() {
           }
         }
 
+        .acDimBtn {
+          white-space: nowrap;
+        }
+        .acDimOn {
+          border-color: rgba(212, 175, 55, 0.34) !important;
+          background: rgba(212, 175, 55, 0.12) !important;
+        }
+
         .acControls {
-          margin-top: 10px;
-          display: flex;
+          position: relative;
+          margin-top: 12px;
+          display: grid;
+          grid-template-columns: 1.2fr 1fr 1fr 1fr;
           gap: 10px;
-          flex-wrap: wrap;
           align-items: center;
+        }
+        .acPlayBtn {
+          font-size: 14px;
+          letter-spacing: 0.2px;
         }
 
         .acBarWrap {
+          position: relative;
           margin-top: 12px;
           cursor: pointer;
           user-select: none;
@@ -920,23 +1002,28 @@ export default function Host() {
         .acBarInner {
           height: 100%;
           width: 0%;
-          background: linear-gradient(90deg, rgba(177, 29, 42, 0.85), rgba(212, 175, 55, 0.35));
+          background: linear-gradient(90deg, rgba(177, 29, 42, 0.90), rgba(212, 175, 55, 0.40));
         }
         .acTimeRow {
           margin-top: 8px;
           display: flex;
           justify-content: space-between;
+          align-items: center;
           font-family: var(--mono);
           font-size: 12px;
-          color: rgba(255, 255, 255, 0.70);
+          color: rgba(255, 255, 255, 0.72);
+          gap: 18px;
+        }
+        .acTime {
+          font-variant-numeric: tabular-nums;
+          min-width: 54px;
         }
 
-        /* ✅ MOBILE (single breakpoint) */
+        /* ✅ MOBILE */
         @media (max-width: 900px) {
           .row {
             margin-bottom: 10px;
           }
-
           .headerStatus {
             width: 100%;
             align-items: flex-start;
@@ -1014,8 +1101,14 @@ export default function Host() {
             justify-content: space-between;
           }
 
+          .acHeader {
+            grid-template-columns: 1fr;
+          }
+          .acHeaderRight {
+            justify-content: flex-start;
+          }
+
           .acControls {
-            display: grid;
             grid-template-columns: 1fr 1fr;
           }
           .acControls :global(.deadair-btn) {
@@ -1033,7 +1126,10 @@ export default function Host() {
         }
       `}</style>
 
-      <div className="deadair-wrap">
+      {/* Dim overlay lives here so it covers the whole page but doesn't block clicks */}
+      <div className="dimOverlay" aria-hidden />
+
+      <div className="deadair-wrap contentAboveDim">
         {/* Header */}
         <div className="row">
           <div>
@@ -1244,7 +1340,6 @@ export default function Host() {
             )}
           </div>
         ) : (
-          /* During rounds 1–4, keep round controls (but skip the big status block) */
           <div className="deadair-card">
             <div className="btnRow" style={{ marginTop: 0 }}>
               {roundsToShow.map((r) => {
@@ -1285,6 +1380,9 @@ export default function Host() {
                     subtitle={currentRoundRow?.title ?? undefined}
                     src={currentRoundRow.narration_audio_url}
                     hintRight={currentRound === 4 ? "Part A" : undefined}
+                    dimEnabled={dimRoomEnabled}
+                    onToggleDim={() => setDimRoomEnabled((v) => !v)}
+                    onPlayingChange={(p) => setNarrationPlaying(p)}
                   />
 
                   {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
@@ -1295,6 +1393,9 @@ export default function Host() {
                         src={currentRoundRow.narration_audio_url_part_b}
                         hintRight="Part B"
                         compact
+                        dimEnabled={dimRoomEnabled}
+                        onToggleDim={() => setDimRoomEnabled((v) => !v)}
+                        onPlayingChange={(p) => setNarrationPlaying(p)}
                       />
                     </div>
                   ) : null}
@@ -1352,9 +1453,7 @@ export default function Host() {
                         code: <span className="mono">{p.code}</span>
                       </span>
 
-                      <span className="pill pillPrivate">
-                        intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
-                      </span>
+                      <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
 
                       <button
                         className="deadair-btn deadair-btnGhost"
@@ -1381,18 +1480,14 @@ export default function Host() {
                   <div className="btnRow">
                     <button
                       className="deadair-btn deadair-btnGhost"
-                      onClick={() =>
-                        copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)
-                      }
+                      onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
                     >
                       Copy intake link
                     </button>
 
                     <button
                       className="deadair-btn deadair-btnPrimary"
-                      onClick={() =>
-                        copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)
-                      }
+                      onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
                     >
                       Copy join link
                     </button>
@@ -1455,18 +1550,14 @@ export default function Host() {
                       <div className="btnRow">
                         <button
                           className="deadair-btn deadair-btnGhost"
-                          onClick={() =>
-                            copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)
-                          }
+                          onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
                         >
                           Copy intake link
                         </button>
 
                         <button
                           className="deadair-btn deadair-btnPrimary"
-                          onClick={() =>
-                            copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)
-                          }
+                          onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
                         >
                           Copy join link
                         </button>
