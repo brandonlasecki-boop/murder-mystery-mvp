@@ -94,8 +94,8 @@ export default function HostIntakePage() {
   const [showSavedToast, setShowSavedToast] = useState<string | null>(null);
   const [requiredError, setRequiredError] = useState<string | null>(null);
 
-  // ✅ mobile: players drawer
-  const [playersOpenMobile, setPlayersOpenMobile] = useState(false);
+  // mobile helper: collapse player list behind an accordion on small screens
+  const [mobilePlayersOpen, setMobilePlayersOpen] = useState(false);
 
   // per-player "last saved" timestamps (client-only)
   const [lastSavedMap, setLastSavedMap] = useState<Record<string, number>>({});
@@ -183,7 +183,7 @@ export default function HostIntakePage() {
       labelFont:
         'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
       sans:
-        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
     };
   }, []);
 
@@ -285,7 +285,11 @@ export default function HostIntakePage() {
     if (!gameId) return;
     setLoading(true);
 
-    const { data: g, error: gErr } = await supabase.from("games").select("id,host_pin").eq("id", gameId).single();
+    const { data: g, error: gErr } = await supabase
+      .from("games")
+      .select("id,host_pin")
+      .eq("id", gameId)
+      .single();
 
     if (gErr || !g) {
       setGame(null);
@@ -335,11 +339,13 @@ export default function HostIntakePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId]);
 
+  // when player changes, hydrate (with unsaved warning)
   async function safeSelectPlayer(nextId: string, opts?: { skipDirtyConfirm?: boolean }) {
     if (nextId === selectedPlayerId) return;
 
     const skip = opts?.skipDirtyConfirm ?? false;
 
+    // Only warn on manual navigation, not on auto-advance
     if (!skip && dirty) {
       const ok = window.confirm("This file has unsaved notes. Discard changes and switch players?");
       if (!ok) return;
@@ -348,11 +354,9 @@ export default function HostIntakePage() {
     setSelectedPlayerId(nextId);
     const p = players.find((x) => x.id === nextId);
     hydrateFromIntake((p?.intake_json ?? null) as IntakeJson | null);
-
-    // ✅ on mobile, auto-close drawer after selection
-    setPlayersOpenMobile(false);
   }
 
+  // Guard against accidental navigation away with unsaved changes
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
       if (!dirty) return;
@@ -369,14 +373,17 @@ export default function HostIntakePage() {
     setBoundaries((prev) => (prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]));
   }
 
+  // dirty computation
   useEffect(() => {
     if (!selectedPlayerId) return;
     const baseline = baselineRef.current[selectedPlayerId] ?? "{}";
     const now = stableStringify(intakeJson ?? {});
-    setDirty(baseline !== now);
+    const isDirty = baseline !== now;
+    setDirty(isDirty);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlayerId, intakeJson]);
 
+  // Keyboard shortcut: Cmd/Ctrl+S
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -463,6 +470,7 @@ export default function HostIntakePage() {
 
       if (error) throw error;
 
+      // best-effort: server-side post-submit hook (if you have it)
       fetch("/api/intake/after-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -486,6 +494,8 @@ export default function HostIntakePage() {
         const nextId = nextPendingPlayerId(selectedPlayer.id);
         if (nextId && nextId !== selectedPlayer.id) {
           await safeSelectPlayer(nextId, { skipDirtyConfirm: true });
+          // on mobile, keep the focus on the form after auto-advance
+          setMobilePlayersOpen(false);
         }
       }
     } catch (e: any) {
@@ -495,6 +505,7 @@ export default function HostIntakePage() {
     }
   }
 
+  // ✅ SEND INTAKE EMAIL (NEW)
   async function sendIntakeInvite(player: any) {
     if (!pinOk) {
       alert("Wrong or missing host PIN.");
@@ -539,6 +550,7 @@ export default function HostIntakePage() {
         return;
       }
 
+      // reflect saved email in local UI (since API may store it)
       setPlayers((prev) => prev.map((p) => (p.id === player.id ? { ...p, invite_email: email } : p)));
 
       const now = Date.now();
@@ -553,11 +565,13 @@ export default function HostIntakePage() {
     }
   }
 
+  // progress
   const intakeTotal = players.length;
   const intakeCompleted = players.filter((p) => !!p.intake_complete).length;
   const remaining = Math.max(0, intakeTotal - intakeCompleted);
   const progressPct = intakeTotal > 0 ? Math.round((intakeCompleted / intakeTotal) * 100) : 0;
 
+  // derived list for search/filter
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return players.filter((p) => {
@@ -610,18 +624,22 @@ export default function HostIntakePage() {
   const selectedLastSaved = selectedPlayer ? lastSavedMap[selectedPlayer.id] : undefined;
 
   return (
-    <main style={{ minHeight: "100vh", background: theme.bg, padding: 18 }}>
+    <main className="page" style={{ minHeight: "100vh", background: theme.bg }}>
       <style jsx>{`
         :global(*) {
           box-sizing: border-box;
         }
 
-        .pageWrap {
+        .page {
+          padding: 18px;
+        }
+        .wrap {
           max-width: 1180px;
           margin: 24px auto;
         }
 
-        .grid {
+        /* ✅ desktop: 2 columns, ✅ mobile: 1 column */
+        .layoutGrid {
           display: grid;
           grid-template-columns: 380px 1fr;
           gap: 14px;
@@ -629,31 +647,12 @@ export default function HostIntakePage() {
           align-items: start;
         }
 
-        .mobileBar {
+        /* mobile-only controls row */
+        .mobileTopRow {
           display: none;
         }
 
-        .playersCard {
-          padding: 14px;
-          border-radius: 14px;
-          background: ${theme.panel};
-          border: 1px solid ${theme.panelBorder};
-          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-          color: ${theme.cream};
-          height: fit-content;
-        }
-
-        .paperCard {
-          border-radius: 16px;
-          border: 1px solid ${theme.paperBorder};
-          box-shadow: ${theme.paperShadow};
-          background: ${theme.paper};
-          color: ${theme.ink};
-          overflow: hidden;
-          position: relative;
-          min-width: 0;
-        }
-
+        /* paper inner padding (desktop vs mobile) */
         .paperInner {
           position: relative;
           padding: 18px;
@@ -661,143 +660,123 @@ export default function HostIntakePage() {
           font-family: ${theme.paperFont};
         }
 
-        .stickySave {
-          display: none;
+        /* make sure inputs never overflow */
+        .paperInner :global(input),
+        .paperInner :global(textarea) {
+          width: 100%;
+          max-width: 100%;
+        }
+
+        /* Hide decorative “binder” bits on small screens so the FORM is visible */
+        .binderHoles,
+        .marginLine,
+        .confidentialStamp {
+          display: block;
+        }
+
+        /* accordion button */
+        .accordBtn {
+          width: 100%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 12px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          background: rgba(0, 0, 0, 0.20);
+          color: rgba(255, 255, 255, 0.92);
+          font-family: ${theme.sans};
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .mobileSelectRow {
+          display: grid;
+          gap: 10px;
+          padding: 14px;
+          border-radius: 14px;
+          background: ${theme.panel};
+          border: 1px solid ${theme.panelBorder};
+          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+          color: ${theme.cream};
+        }
+
+        .mobileSelectLabel {
+          font-family: ${theme.labelFont};
+          font-size: 11px;
+          letter-spacing: 1.4px;
+          text-transform: uppercase;
+          color: ${theme.muted};
+        }
+
+        .mobileSelect {
+          width: 100%;
+          padding: 12px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.18);
+          color: rgba(255, 255, 255, 0.92);
+          font-family: ${theme.sans};
+          outline: none;
+        }
+
+        .mobileMetaLine {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+          color: ${theme.muted};
+          font-family: ${theme.sans};
+          font-size: 13px;
         }
 
         @media (max-width: 900px) {
-          .grid {
+          .page {
+            padding: 12px;
+          }
+          .wrap {
+            margin: 12px auto;
+          }
+          .layoutGrid {
             grid-template-columns: 1fr;
           }
 
-          .playersCard {
-            display: none; /* replaced by mobile drawer */
-          }
-
-          .mobileBar {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
+          /* show mobile top row */
+          .mobileTopRow {
+            display: grid;
+            gap: 12px;
             margin-top: 12px;
           }
 
+          /* player list becomes optional (accordion) */
+          .playersPanel {
+            display: ${mobilePlayersOpen ? "block" : "none"};
+          }
+
+          /* paper becomes full-width + remove left gutter so content doesn't vanish */
           .paperInner {
-            padding: 14px;
-            padding-left: 14px; /* remove binder rail spacing */
+            padding: 16px;
+            padding-left: 16px;
           }
 
-          .stickySave {
-            display: flex;
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 60;
-            padding: 10px;
-            background: rgba(8,10,12,0.82);
-            border-top: 1px solid rgba(255,255,255,0.12);
-            backdrop-filter: blur(10px);
+          .binderHoles,
+          .marginLine {
+            display: none;
           }
 
-          .stickySaveInner {
-            width: 100%;
-            max-width: 1180px;
-            margin: 0 auto;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            justify-content: space-between;
+          /* keep stamp but tuck it so it doesn't overlap everything */
+          .confidentialStamp {
+            transform: rotate(-10deg);
+            top: 12px !important;
+            right: 12px !important;
+            padding: 8px 10px !important;
+            font-size: 11px !important;
           }
-
-          .stickyBtn {
-            min-height: 44px;
-            padding: 12px 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.16);
-            background: rgba(0,0,0,0.22);
-            color: rgba(255,255,255,0.92);
-            font-family: ${theme.sans};
-            font-weight: 900;
-            cursor: pointer;
-            white-space: nowrap;
-          }
-
-          .stickyBtnPrimary {
-            border: 1px solid rgba(212,175,55,0.26);
-            background: rgba(117,29,47,0.9);
-            box-shadow: 0 16px 45px rgba(117,29,47,0.22);
-          }
-
-          .stickyMeta {
-            font-family: ${theme.labelFont};
-            font-size: 11px;
-            opacity: 0.75;
-            line-height: 1.2;
-          }
-
-          /* give bottom space so fixed bar doesn't cover fields */
-          .pageWrap {
-            padding-bottom: 86px;
-          }
-        }
-
-        /* Mobile drawer */
-        .drawerOverlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.62);
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          padding: 10px;
-          z-index: 70;
-        }
-        .drawerCard {
-          width: 100%;
-          max-width: 780px;
-          max-height: 88vh;
-          overflow: auto;
-          border-radius: 16px;
-          border: 1px solid rgba(255,255,255,0.14);
-          background: rgba(14,16,20,0.94);
-          color: rgba(255,255,255,0.92);
-          box-shadow: 0 20px 60px rgba(0,0,0,0.65);
-          backdrop-filter: blur(12px);
-        }
-        .drawerTop {
-          position: sticky;
-          top: 0;
-          background: rgba(14,16,20,0.92);
-          border-bottom: 1px solid rgba(255,255,255,0.10);
-          padding: 12px;
-          z-index: 1;
-        }
-        .drawerCloseRow {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 10px;
-        }
-        .drawerTitle {
-          font-weight: 900;
-          letter-spacing: 0.2px;
-        }
-        .drawerBtn {
-          min-height: 44px;
-          padding: 10px 12px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.16);
-          background: rgba(0,0,0,0.18);
-          color: rgba(255,255,255,0.92);
-          cursor: pointer;
-          font-family: ${theme.sans};
-          font-weight: 900;
         }
       `}</style>
 
-      <div className="pageWrap">
+      <div className="wrap">
         {/* Header */}
         <header
           style={{
@@ -867,7 +846,6 @@ export default function HostIntakePage() {
                   router.push(`/host/${gameId}?pin=${encodeURIComponent(pin)}`);
                 }}
                 style={{
-                  minHeight: 44,
                   color: theme.cream,
                   border: "1px solid rgba(255,255,255,0.16)",
                   background: "rgba(0,0,0,0.20)",
@@ -884,7 +862,6 @@ export default function HostIntakePage() {
 
               <label
                 style={{
-                  minHeight: 44,
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 8,
@@ -906,37 +883,79 @@ export default function HostIntakePage() {
             </div>
           </div>
 
-          {/* ✅ Mobile quick controls */}
-          <div className="mobileBar">
-            <button
-              onClick={() => setPlayersOpenMobile(true)}
-              style={{
-                minHeight: 44,
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.16)",
-                background: "rgba(0,0,0,0.20)",
-                color: theme.cream,
-                cursor: "pointer",
-                fontFamily: theme.sans,
-                fontWeight: 900,
-              }}
-            >
-              Players ▾
-            </button>
+          {/* ✅ Mobile-only: player picker + “show player list” toggle */}
+          <div className="mobileTopRow">
+            <div className="mobileSelectRow">
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div className="mobileSelectLabel">Selected player</div>
+                  <div className="mobileMetaLine" style={{ marginTop: 6 }}>
+                    <span style={{ color: theme.cream, fontWeight: 900 }}>
+                      {selectedPlayer?.name ?? "None"}
+                    </span>
+                    {selectedPlayer ? (
+                      <>
+                        <span style={{ opacity: 0.6 }}>·</span>
+                        <span style={{ fontFamily: theme.labelFont, fontSize: 12 }}>
+                          {selectedPlayer.code}
+                        </span>
+                        <span style={{ opacity: 0.6 }}>·</span>
+                        <span>{selectedPlayer.intake_complete ? "✅ complete" : "⏳ pending"}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
 
-            <div style={{ fontFamily: theme.labelFont, fontSize: 11, opacity: 0.75 }}>
-              {selectedPlayer?.name ? `Editing: ${selectedPlayer.name}` : "Select a player"}
-              {dirty ? " · ● unsaved" : ""}
+                <button
+                  className="accordBtn"
+                  onClick={() => setMobilePlayersOpen((v) => !v)}
+                  style={{ width: "auto", padding: "10px 12px" }}
+                  title="Toggle player list"
+                >
+                  {mobilePlayersOpen ? "Hide player list" : "Show player list"} <span style={{ opacity: 0.75 }}>▾</span>
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: 8 }}>
+                <div className="mobileSelectLabel">Quick switch</div>
+                <select
+                  className="mobileSelect"
+                  value={selectedPlayerId}
+                  onChange={async (e) => {
+                    const nextId = e.target.value;
+                    if (!nextId) return;
+                    await safeSelectPlayer(nextId);
+                    setMobilePlayersOpen(false);
+                  }}
+                >
+                  {players.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — {p.intake_complete ? "Complete" : "Pending"} ({p.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="grid">
-          {/* Desktop Player list */}
-          <div className="playersCard">
+        <div className="layoutGrid">
+          {/* Player list */}
+          <div
+            className="playersPanel"
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              background: theme.panel,
+              border: `1px solid ${theme.panelBorder}`,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+              color: theme.cream,
+              height: "fit-content",
+            }}
+          >
+            {/* Search + filter */}
             <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <h2 style={{ margin: 0, fontSize: 18 }}>Players</h2>
                 <div style={{ fontSize: 12, color: theme.muted }}>Select a file</div>
               </div>
@@ -947,7 +966,6 @@ export default function HostIntakePage() {
                 placeholder="Search name, code, or email…"
                 style={{
                   width: "100%",
-                  minHeight: 44,
                   padding: "10px 12px",
                   borderRadius: 12,
                   border: "1px solid rgba(255,255,255,0.14)",
@@ -992,7 +1010,10 @@ export default function HostIntakePage() {
                     }}
                   >
                     <button
-                      onClick={() => safeSelectPlayer(p.id)}
+                      onClick={async () => {
+                        await safeSelectPlayer(p.id);
+                        setMobilePlayersOpen(false);
+                      }}
                       style={{
                         width: "100%",
                         textAlign: "left",
@@ -1034,7 +1055,7 @@ export default function HostIntakePage() {
                             <span
                               key={c}
                               style={{
-                                padding: "4px 8px",
+                                padding: "6px 10px",
                                 borderRadius: 999,
                                 fontFamily: theme.sans,
                                 fontSize: 12,
@@ -1050,14 +1071,14 @@ export default function HostIntakePage() {
                       )}
                     </button>
 
+                    {/* ✅ actions */}
                     <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
                       <button
                         onClick={() => sendIntakeInvite(p)}
                         disabled={sending}
                         style={{
-                          minHeight: 44,
                           padding: "10px 12px",
-                          borderRadius: 12,
+                          borderRadius: 10,
                           border: "1px solid rgba(255,255,255,0.16)",
                           background: "rgba(0,0,0,0.18)",
                           color: theme.cream,
@@ -1066,6 +1087,7 @@ export default function HostIntakePage() {
                           fontWeight: 900,
                           fontSize: 13,
                           opacity: sending ? 0.7 : 1,
+                          minHeight: 44, // ✅ tap target
                         }}
                         title="Send this player the intake form link"
                       >
@@ -1079,7 +1101,9 @@ export default function HostIntakePage() {
                       ) : null}
 
                       {inviteErr ? (
-                        <span style={{ fontFamily: theme.sans, fontSize: 12, color: "rgba(255,150,150,0.95)" }}>{inviteErr}</span>
+                        <span style={{ fontFamily: theme.sans, fontSize: 12, color: "rgba(255,150,150,0.95)" }}>
+                          {inviteErr}
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -1087,7 +1111,14 @@ export default function HostIntakePage() {
               })}
 
               {filteredPlayers.length === 0 && (
-                <div style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", color: theme.muted }}>
+                <div
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: theme.muted,
+                  }}
+                >
                   No matches.
                 </div>
               )}
@@ -1095,7 +1126,17 @@ export default function HostIntakePage() {
           </div>
 
           {/* Paper Form */}
-          <div className="paperCard">
+          <div
+            style={{
+              borderRadius: 16,
+              border: `1px solid ${theme.paperBorder}`,
+              boxShadow: theme.paperShadow,
+              background: theme.paper,
+              color: theme.ink,
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
             {/* paper overlays */}
             <div
               aria-hidden
@@ -1120,7 +1161,7 @@ export default function HostIntakePage() {
               }}
             />
 
-            {/* torn edges */}
+            {/* torn edge top */}
             <div
               aria-hidden
               style={{
@@ -1129,12 +1170,14 @@ export default function HostIntakePage() {
                 top: 0,
                 right: 0,
                 height: 18,
-                background: "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
+                background:
+                  "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
                 opacity: 0.55,
                 clipPath:
                   "polygon(0% 70%, 4% 55%, 8% 72%, 12% 50%, 16% 74%, 20% 52%, 24% 76%, 28% 54%, 32% 78%, 36% 56%, 40% 80%, 44% 58%, 48% 82%, 52% 60%, 56% 84%, 60% 62%, 64% 82%, 68% 60%, 72% 78%, 76% 58%, 80% 76%, 84% 54%, 88% 72%, 92% 52%, 96% 70%, 100% 58%, 100% 0%, 0% 0%)",
               }}
             />
+            {/* torn edge bottom */}
             <div
               aria-hidden
               style={{
@@ -1143,15 +1186,16 @@ export default function HostIntakePage() {
                 bottom: 0,
                 right: 0,
                 height: 18,
-                background: "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
+                background:
+                  "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
                 opacity: 0.55,
                 clipPath:
                   "polygon(0% 100%, 0% 42%, 4% 55%, 8% 40%, 12% 60%, 16% 38%, 20% 58%, 24% 36%, 28% 56%, 32% 34%, 36% 54%, 40% 32%, 44% 52%, 48% 30%, 52% 50%, 56% 32%, 60% 52%, 64% 34%, 68% 54%, 72% 36%, 76% 56%, 80% 38%, 84% 58%, 88% 40%, 92% 60%, 96% 42%, 100% 55%, 100% 100%)",
               }}
             />
 
-            {/* binder holes + margin line (hidden by CSS on mobile via padding change; the elements stay but won't crowd) */}
-            <div aria-hidden style={{ position: "absolute", left: 18, top: 70, width: 24, height: "calc(100% - 120px)" }}>
+            {/* binder holes */}
+            <div className="binderHoles" aria-hidden style={{ position: "absolute", left: 18, top: 70, width: 24, height: "calc(100% - 120px)" }}>
               {Array.from({ length: 3 }).map((_, i) => (
                 <div
                   key={i}
@@ -1169,7 +1213,9 @@ export default function HostIntakePage() {
               ))}
             </div>
 
+            {/* margin line */}
             <div
+              className="marginLine"
               aria-hidden
               style={{
                 position: "absolute",
@@ -1181,8 +1227,9 @@ export default function HostIntakePage() {
               }}
             />
 
-            {/* stamp */}
+            {/* Confidential stamp */}
             <div
+              className="confidentialStamp"
               aria-hidden
               style={{
                 position: "absolute",
@@ -1206,6 +1253,7 @@ export default function HostIntakePage() {
             </div>
 
             <div className="paperInner">
+              {/* classification strip */}
               <div
                 style={{
                   fontFamily: theme.labelFont,
@@ -1293,7 +1341,7 @@ export default function HostIntakePage() {
 
               {!selectedPlayer ? (
                 <p style={{ marginTop: 12, fontFamily: theme.sans, opacity: 0.8 }}>
-                  Select a player (desktop left panel, or mobile “Players ▾”) to edit their intake.
+                  Select a player to edit their intake.
                 </p>
               ) : (
                 <>
@@ -1392,7 +1440,13 @@ export default function HostIntakePage() {
 
                   <Section title="Boundaries" subtitle="Avoid joking about (select any).">
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                          gap: 10,
+                        }}
+                      >
                         {BOUNDARY_OPTIONS.map((b) => (
                           <label
                             key={b}
@@ -1401,11 +1455,11 @@ export default function HostIntakePage() {
                               gap: 10,
                               alignItems: "center",
                               padding: "12px 12px",
-                              minHeight: 44,
-                              borderRadius: 10,
+                              borderRadius: 12,
                               border: "1px solid rgba(0,0,0,0.18)",
                               background: "rgba(255,255,255,0.55)",
                               fontFamily: theme.paperFont,
+                              minHeight: 44, // ✅ tap target
                             }}
                           >
                             <input type="checkbox" checked={boundaries.includes(b)} onChange={() => toggleBoundary(b)} />
@@ -1414,7 +1468,12 @@ export default function HostIntakePage() {
                         ))}
                       </div>
 
-                      <TextField label="Other boundary (optional)" value={boundariesOther} onChange={setBoundariesOther} paperFont={theme.paperFont} />
+                      <TextField
+                        label="Other boundary (optional)"
+                        value={boundariesOther}
+                        onChange={setBoundariesOther}
+                        paperFont={theme.paperFont}
+                      />
                     </div>
                   </Section>
 
@@ -1434,19 +1493,16 @@ export default function HostIntakePage() {
                           background: "rgba(255,255,255,0.65)",
                           resize: "vertical",
                           fontFamily: theme.paperFont,
-                          minHeight: 120,
                         }}
                       />
                     </label>
                   </Section>
 
-                  {/* Desktop action row stays (mobile gets sticky bar) */}
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16, alignItems: "center" }}>
                     <button
                       onClick={save}
                       disabled={saving}
                       style={{
-                        minHeight: 44,
                         padding: "12px 14px",
                         borderRadius: 12,
                         border: "1px solid rgba(0,0,0,0.25)",
@@ -1455,6 +1511,7 @@ export default function HostIntakePage() {
                         fontWeight: 900,
                         cursor: saving ? "not-allowed" : "pointer",
                         boxShadow: "0 10px 24px rgba(117,29,47,0.25)",
+                        minHeight: 44, // ✅ tap target
                       }}
                       title="Saves answers and marks this player complete"
                     >
@@ -1465,7 +1522,6 @@ export default function HostIntakePage() {
                       onClick={markIncomplete}
                       disabled={saving}
                       style={{
-                        minHeight: 44,
                         padding: "12px 14px",
                         borderRadius: 12,
                         border: "1px solid rgba(0,0,0,0.22)",
@@ -1473,6 +1529,7 @@ export default function HostIntakePage() {
                         color: "rgba(27,27,27,0.92)",
                         fontWeight: 900,
                         cursor: saving ? "not-allowed" : "pointer",
+                        minHeight: 44, // ✅ tap target
                       }}
                       title="Mark this player as incomplete (does not erase answers)"
                     >
@@ -1513,6 +1570,7 @@ export default function HostIntakePage() {
                   fontFamily: theme.sans,
                   fontSize: 13,
                   boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
+                  maxWidth: "calc(100% - 24px)",
                 }}
               >
                 {showSavedToast}
@@ -1520,173 +1578,6 @@ export default function HostIntakePage() {
             ) : null}
           </div>
         </div>
-
-        {/* ✅ Mobile sticky save bar */}
-        {selectedPlayer ? (
-          <div className="stickySave">
-            <div className="stickySaveInner">
-              <button
-                className="stickyBtn"
-                onClick={() => setPlayersOpenMobile(true)}
-                title="Open player list"
-              >
-                Players ▾
-              </button>
-
-              <div className="stickyMeta">
-                <div style={{ fontWeight: 900, fontFamily: theme.sans, letterSpacing: 0.2 }}>
-                  {selectedPlayer.name}
-                </div>
-                <div>
-                  {dirty ? "● unsaved" : "✓ saved"}
-                  {selectedLastSaved ? ` · ${formatTime(selectedLastSaved)}` : ""}
-                </div>
-              </div>
-
-              <button
-                className={`stickyBtn stickyBtnPrimary`}
-                onClick={save}
-                disabled={saving}
-                style={{ opacity: saving ? 0.7 : 1 }}
-                title="Save and mark complete"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {/* ✅ Mobile players drawer */}
-        {playersOpenMobile ? (
-          <div className="drawerOverlay" onClick={() => setPlayersOpenMobile(false)} role="dialog" aria-modal="true">
-            <div className="drawerCard" onClick={(e) => e.stopPropagation()}>
-              <div className="drawerTop">
-                <div className="drawerCloseRow">
-                  <div className="drawerTitle">Players</div>
-                  <button className="drawerBtn" onClick={() => setPlayersOpenMobile(false)}>
-                    Close
-                  </button>
-                </div>
-
-                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search name, code, or email…"
-                    style={{
-                      width: "100%",
-                      minHeight: 44,
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      background: "rgba(0,0,0,0.22)",
-                      color: "rgba(255,255,255,0.92)",
-                      fontFamily: theme.sans,
-                      outline: "none",
-                    }}
-                  />
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Chip active={filter === "pending"} onClick={() => setFilter("pending")} label="Pending" />
-                    <Chip active={filter === "complete"} onClick={() => setFilter("complete")} label="Complete" />
-                    <Chip active={filter === "all"} onClick={() => setFilter("all")} label="All" />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ padding: 12, display: "grid", gap: 10 }}>
-                {filteredPlayers.map((p) => {
-                  const active = p.id === selectedPlayerId;
-                  const complete = !!p.intake_complete;
-                  const chips = previewChips(p);
-
-                  const sending = !!inviteSendingMap[p.id];
-                  const sentTs = inviteSentMap[p.id];
-
-                  return (
-                    <div
-                      key={p.id}
-                      style={{
-                        borderRadius: 14,
-                        border: `1px solid ${active ? "rgba(212,175,55,0.45)" : "rgba(255,255,255,0.14)"}`,
-                        background: active ? "rgba(212,175,55,0.10)" : "rgba(255,255,255,0.04)",
-                        padding: 12,
-                      }}
-                    >
-                      <button
-                        onClick={() => safeSelectPlayer(p.id)}
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          background: "transparent",
-                          border: "none",
-                          padding: 0,
-                          color: "rgba(255,255,255,0.92)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                          <div style={{ fontWeight: 900 }}>{p.name}</div>
-                          <div style={{ fontFamily: theme.labelFont, fontSize: 11, opacity: 0.8, letterSpacing: 1, textTransform: "uppercase" }}>
-                            {complete ? "Complete" : "Pending"}
-                          </div>
-                        </div>
-
-                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                          code: <span style={{ fontFamily: theme.labelFont }}>{p.code}</span> · intake: {complete ? "✅" : "❌"}
-                        </div>
-
-                        {chips.length > 0 ? (
-                          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            {chips.map((c) => (
-                              <span
-                                key={c}
-                                style={{
-                                  padding: "4px 8px",
-                                  borderRadius: 999,
-                                  fontFamily: theme.sans,
-                                  fontSize: 12,
-                                  border: "1px solid rgba(255,255,255,0.14)",
-                                  background: "rgba(0,0,0,0.20)",
-                                  color: "rgba(255,255,255,0.92)",
-                                }}
-                              >
-                                {c}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </button>
-
-                      <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-                        <button
-                          className="drawerBtn"
-                          onClick={() => sendIntakeInvite(p)}
-                          disabled={sending}
-                          style={{ opacity: sending ? 0.7 : 1 }}
-                        >
-                          {sending ? "Sending…" : "Send intake form"}
-                        </button>
-
-                        {sentTs ? (
-                          <span style={{ fontFamily: theme.labelFont, fontSize: 11, opacity: 0.7 }}>
-                            Sent {formatTime(sentTs)}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {filteredPlayers.length === 0 ? (
-                  <div style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", opacity: 0.8 }}>
-                    No matches.
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ) : null}
       </div>
     </main>
   );
@@ -1697,7 +1588,6 @@ function Chip(props: { active: boolean; label: string; onClick: () => void }) {
     <button
       onClick={props.onClick}
       style={{
-        minHeight: 44,
         padding: "10px 12px",
         borderRadius: 999,
         border: `1px solid ${props.active ? "rgba(212,175,55,0.45)" : "rgba(255,255,255,0.14)"}`,
@@ -1705,8 +1595,8 @@ function Chip(props: { active: boolean; label: string; onClick: () => void }) {
         color: "rgba(255,255,255,0.90)",
         cursor: "pointer",
         fontSize: 13,
-        fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-        fontWeight: 900,
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+        minHeight: 44, // ✅ tap target
       }}
     >
       {props.label}
@@ -1726,7 +1616,8 @@ function FileDivider(props: { label: string }) {
           borderRadius: 999,
           border: "1px solid rgba(0,0,0,0.18)",
           background: "rgba(255,255,255,0.35)",
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
           fontSize: 12,
           letterSpacing: 1.4,
           textTransform: "uppercase",
@@ -1752,7 +1643,8 @@ function Section(props: { title: string; subtitle?: string; children: React.Reac
               fontSize: 12,
               letterSpacing: 1,
               textTransform: "uppercase",
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              fontFamily:
+                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
             }}
           >
             {props.subtitle}
@@ -1772,13 +1664,12 @@ function TextField(props: { label: string; value: string; onChange: (v: string) 
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         style={{
-          minHeight: 44,
           padding: "12px 12px",
           borderRadius: 12,
           border: "1px solid rgba(0,0,0,0.22)",
           background: "rgba(255,255,255,0.65)",
           fontFamily: props.paperFont,
-          width: "100%",
+          minHeight: 44,
         }}
       />
     </label>
@@ -1802,7 +1693,7 @@ function RadioRow(props: {
       <div style={{ fontWeight: 900, marginBottom: 10 }}>{props.label}</div>
 
       <div style={{ display: "grid", gap: 10 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
           {props.options.map((opt) => (
             <label
               key={opt}
@@ -1811,10 +1702,10 @@ function RadioRow(props: {
                 gap: 10,
                 alignItems: "center",
                 padding: "12px 12px",
-                minHeight: 44,
                 borderRadius: 12,
                 border: "1px solid rgba(0,0,0,0.18)",
                 background: "rgba(255,255,255,0.55)",
+                minHeight: 44,
               }}
             >
               <input type="radio" name={props.name} checked={props.value === opt} onChange={() => props.onChange(opt)} />
@@ -1829,10 +1720,10 @@ function RadioRow(props: {
             gap: 10,
             alignItems: "center",
             padding: "12px 12px",
-            minHeight: 44,
             borderRadius: 12,
             border: "1px solid rgba(0,0,0,0.18)",
             background: "rgba(255,255,255,0.55)",
+            minHeight: 44,
             maxWidth: 520,
           }}
         >
@@ -1846,14 +1737,13 @@ function RadioRow(props: {
             onChange={(e) => props.onOtherChange(e.target.value)}
             placeholder="Type your own…"
             style={{
-              minHeight: 44,
               padding: "12px 12px",
               borderRadius: 12,
               border: "1px solid rgba(0,0,0,0.22)",
               background: "rgba(255,255,255,0.65)",
               fontFamily: props.paperFont,
-              width: "100%",
               maxWidth: 520,
+              minHeight: 44,
             }}
           />
         )}
