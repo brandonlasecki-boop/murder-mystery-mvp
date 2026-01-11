@@ -30,44 +30,23 @@ type RoundContent = {
   private_text: string | null;
 };
 
-function safeHash(s: string) {
-  // lightweight non-crypto hash for change detection
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(16);
-}
-
 export default function PlayerPage() {
   const params = useParams();
   const code = (params.code as string) || "";
 
-  const [loading, setLoading] = useState(true); // true only on initial load
+  const [loading, setLoading] = useState(true); // only for initial load
   const [player, setPlayer] = useState<Player | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [content, setContent] = useState<RoundContent | null>(null);
 
-  // ✅ narration hidden by default
+  // ✅ Narration hidden by default
   const [showNarration, setShowNarration] = useState(false);
 
-  // ✅ “NEW briefing” pulse when round/content changes
-  const [newBriefing, setNewBriefing] = useState(false);
-
-  // ✅ panic hide (quick conceal on screen)
+  // ✅ Panic hide (strong): never renders the real text while hidden
   const [panicHidden, setPanicHidden] = useState(false);
 
-  // status helper (client-side)
-  const [lastCheckedTs, setLastCheckedTs] = useState<number | null>(null);
-
-  // refs to avoid expensive polling behavior + detect changes
-  const playerIdRef = useRef<string>("");
-  const gameIdRef = useRef<string>("");
-  const lastRoundRef = useRef<number>(-1);
-  const lastPrivateHashRef = useRef<string>("");
-  const initialLoadedRef = useRef(false);
-  const newBriefingTimerRef = useRef<number | null>(null);
+  // track last round to reset narration + panic when round advances
+  const lastRoundRef = useRef<number | null>(null);
 
   const styles = useMemo(() => {
     const bg = "#07080a";
@@ -163,7 +142,6 @@ export default function PlayerPage() {
         fontFamily: sans,
         lineHeight: 1.55,
       } as const,
-
       subSpaced: { marginTop: 10 } as const,
 
       pills: {
@@ -258,9 +236,9 @@ export default function PlayerPage() {
 
       panicBtn: {
         appearance: "none",
-        border: `1px solid rgba(177,29,42,0.40)`,
-        background: "rgba(177,29,42,0.14)",
-        color: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(210,180,140,0.25)",
+        background: "rgba(210,180,140,0.10)",
+        color: "rgba(210,180,140,0.95)",
         padding: "10px 12px",
         borderRadius: 14,
         cursor: "pointer",
@@ -295,48 +273,64 @@ export default function PlayerPage() {
         fontFamily: sans,
         color: "rgba(255,255,255,0.94)",
         fontSize: 14,
-        position: "relative",
+        position: "relative", // ✅ for panic overlay
         overflow: "hidden",
       } as const,
 
-      // overlay when panicHidden = true
-      panicOverlay: {
+      // ✅ Redaction/Decoy
+      redactedWrap: {
+        display: "grid",
+        gap: 10,
+        paddingTop: 2,
+        paddingBottom: 2,
+      } as const,
+
+      redactedLine: {
+        height: 14,
+        borderRadius: 999,
+        background:
+          "linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))",
+        border: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+      } as const,
+
+      // ✅ Stronger panic overlay (near-opaque; hides EVERYTHING)
+      panicOverlayStrong: {
         position: "absolute",
         inset: 0,
         background:
-          "linear-gradient(180deg, rgba(7,8,10,0.78), rgba(0,0,0,0.84))",
+          "linear-gradient(180deg, rgba(7,8,10,0.96), rgba(0,0,0,0.98))",
         borderRadius: 16,
-        border: `1px solid rgba(255,255,255,0.10)`,
+        border: "1px solid rgba(255,255,255,0.12)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 14,
+        zIndex: 3,
+        cursor: "pointer",
       } as const,
 
       panicOverlayInner: {
-        width: "100%",
-        borderRadius: 14,
-        border: `1px solid rgba(210,180,140,0.22)`,
-        background: "rgba(0,0,0,0.25)",
-        padding: 14,
-        boxShadow: "0 18px 55px rgba(0,0,0,0.55)",
         textAlign: "center",
-        fontFamily: sans,
+        maxWidth: 520,
       } as const,
 
       panicTitle: {
         margin: 0,
+        fontFamily: sans,
         fontWeight: 900,
-        letterSpacing: "0.2px",
-        color: "rgba(255,255,255,0.94)",
-        fontSize: 14,
+        letterSpacing: "0.6px",
+        textTransform: "uppercase",
+        color: "rgba(255,255,255,0.92)",
+        fontSize: 13,
       } as const,
 
       panicSub: {
-        margin: "8px 0 0",
+        margin: "10px 0 0",
+        fontFamily: sans,
         color: "rgba(255,255,255,0.72)",
-        fontSize: 13,
         lineHeight: 1.5,
+        fontSize: 13,
       } as const,
 
       narrationHeader: {
@@ -378,7 +372,7 @@ export default function PlayerPage() {
         margin: 0,
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
-        lineHeight: 1.6,
+        lineHeight: 1.55,
       } as const,
 
       footerHint: {
@@ -401,70 +395,24 @@ export default function PlayerPage() {
         marginTop: 14,
       } as const,
 
-      // NEW badge
-      newPill: {
-        border: `1px solid rgba(212,175,55,0.35)`,
-        background: "rgba(212,175,55,0.14)",
-        color: "rgba(255,255,255,0.92)",
-      } as const,
-
-      // small “last checked”
-      lastChecked: {
+      hintLine: {
         marginTop: 10,
-        color: "rgba(255,255,255,0.62)",
-        fontSize: 12,
+        padding: "10px 12px",
+        borderRadius: 14,
+        border: "1px solid rgba(255,255,255,0.10)",
+        background: "rgba(0,0,0,0.18)",
         fontFamily: sans,
-        lineHeight: 1.4,
-      } as const,
-
-      // sticky panic (mobile-friendly)
-      stickyBar: {
-        position: "fixed",
-        left: 0,
-        right: 0,
-        bottom: 0,
-        padding: "12px 16px",
-        background:
-          "linear-gradient(180deg, rgba(7,8,10,0.0), rgba(7,8,10,0.82) 35%, rgba(7,8,10,0.92))",
-        pointerEvents: "none",
-        zIndex: 50,
-      } as const,
-
-      stickyInner: {
-        maxWidth: 940,
-        margin: "0 auto",
-        display: "flex",
-        justifyContent: "flex-end",
-        gap: 10,
-        pointerEvents: "auto",
+        color: "rgba(255,255,255,0.72)",
+        lineHeight: 1.5,
+        fontSize: 13,
       } as const,
     };
   }, []);
 
-  function getShowNarrationKey() {
-    return `mm:player:${code}:showNarration`;
-  }
-
-  function clearNewBriefingTimer() {
-    if (newBriefingTimerRef.current) {
-      window.clearTimeout(newBriefingTimerRef.current);
-      newBriefingTimerRef.current = null;
-    }
-  }
-
-  function triggerNewBriefing() {
-    setNewBriefing(true);
-    clearNewBriefingTimer();
-    newBriefingTimerRef.current = window.setTimeout(() => {
-      setNewBriefing(false);
-      newBriefingTimerRef.current = null;
-    }, 1800);
-  }
-
-  async function loadPlayerAndGameOnce() {
+  async function load() {
     if (!code) return;
 
-    // 1) player by code
+    // 1) Load player by code
     const { data: p, error: pErr } = await supabase
       .from("players")
       .select("id,name,code,game_id")
@@ -478,12 +426,9 @@ export default function PlayerPage() {
       setLoading(false);
       return;
     }
-
     setPlayer(p);
-    playerIdRef.current = p.id;
-    gameIdRef.current = p.game_id;
 
-    // 2) game
+    // 2) Load game
     const { data: g, error: gErr } = await supabase
       .from("games")
       .select("id,current_round,story_generated")
@@ -497,182 +442,79 @@ export default function PlayerPage() {
       return;
     }
 
-    setGame(g);
-    setLoading(false);
-  }
-
-  async function refreshGameStatusOnly() {
-    const gid = gameIdRef.current;
-    if (!gid) return null;
-
-    const { data: g, error: gErr } = await supabase
-      .from("games")
-      .select("id,current_round,story_generated")
-      .eq("id", gid)
-      .single();
-
-    if (gErr || !g) return null;
+    // ✅ Detect round changes (reset narration + panic)
+    const nextRound = g.current_round ?? 0;
+    if (lastRoundRef.current === null) lastRoundRef.current = nextRound;
+    if (lastRoundRef.current !== nextRound) {
+      lastRoundRef.current = nextRound;
+      setShowNarration(false); // hide by default each round
+      setPanicHidden(false); // never carry panic into next round
+    }
 
     setGame(g);
-    return g as Game;
-  }
 
-  async function loadRoundContent(gameRow: Game) {
-    const pid = playerIdRef.current;
-    if (!pid) return;
-
-    if (!gameRow.story_generated) {
+    // 3) Stop if story not generated
+    if (!g.story_generated) {
       setContent(null);
+      setLoading(false);
       return;
     }
 
-    const currentRound = gameRow.current_round ?? 0;
-    if (currentRound === 0) {
+    // 4) Pre-game
+    if (nextRound === 0) {
       setContent(null);
+      setLoading(false);
       return;
     }
 
-    // narration
+    // 5) Load narration
     const { data: rr, error: rrErr } = await supabase
       .from("rounds")
       .select("narration_text")
-      .eq("game_id", gameRow.id)
-      .eq("round_number", currentRound)
+      .eq("game_id", g.id)
+      .eq("round_number", nextRound)
       .single<RoundRow>();
 
-    // private prompt
+    // 6) Load private prompt
     const { data: pr, error: prErr } = await supabase
       .from("player_round_content")
       .select("private_text")
-      .eq("game_id", gameRow.id)
-      .eq("player_id", pid)
-      .eq("round_number", currentRound)
+      .eq("game_id", g.id)
+      .eq("player_id", p.id)
+      .eq("round_number", nextRound)
       .single<PlayerRoundRow>();
 
     if (rrErr || prErr || !rr || !pr) {
       setContent(null);
+      setLoading(false);
       return;
     }
 
-    const narration_text = rr.narration_text ?? null;
-    const private_text = pr.private_text ?? null;
+    setContent({
+      narration_text: rr.narration_text ?? null,
+      private_text: pr.private_text ?? null,
+    });
 
-    // detect private prompt changes (for NEW badge)
-    const newHash = safeHash(`${currentRound}::${private_text ?? ""}`);
-    const prevHash = lastPrivateHashRef.current;
-
-    setContent({ narration_text, private_text });
-
-    if (prevHash && prevHash !== newHash) {
-      triggerNewBriefing();
-      // if panic is ON, keep it ON (don’t reveal automatically)
-    }
-
-    lastPrivateHashRef.current = newHash;
+    setLoading(false);
   }
 
-  // initial: restore narration preference, load player/game
   useEffect(() => {
-    try {
-      const v = window.localStorage.getItem(getShowNarrationKey());
-      if (v === "1") setShowNarration(true);
-      else setShowNarration(false);
-    } catch {
-      setShowNarration(false);
-    }
-
-    setPanicHidden(false);
-    setNewBriefing(false);
-    lastRoundRef.current = -1;
-    lastPrivateHashRef.current = "";
-    initialLoadedRef.current = false;
-    playerIdRef.current = "";
-    gameIdRef.current = "";
-
-    (async () => {
-      setLoading(true);
-      await loadPlayerAndGameOnce();
-      initialLoadedRef.current = true;
-    })();
-
-    return () => {
-      clearNewBriefingTimer();
-    };
+    load();
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
-  // persist narration preference
+  // ✅ Keyboard shortcut for panic (P)
   useEffect(() => {
-    try {
-      window.localStorage.setItem(getShowNarrationKey(), showNarration ? "1" : "0");
-    } catch {
-      // ignore
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showNarration]);
-
-  // polling: cheap mode (game only), then content only when needed
-  useEffect(() => {
-    if (!code) return;
-
-    let stopped = false;
-
-    async function tick() {
-      if (stopped) return;
-
-      // don’t spam in background tabs
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return;
-      }
-
-      // must have loaded player/game once
-      if (!initialLoadedRef.current || !playerIdRef.current || !gameIdRef.current) return;
-
-      const g = await refreshGameStatusOnly();
-      setLastCheckedTs(Date.now());
-
-      if (!g) return;
-
-      const currentRound = g.current_round ?? 0;
-      const prevRound = lastRoundRef.current;
-
-      // first time or round changed
-      if (prevRound === -1 || currentRound !== prevRound) {
-        if (prevRound !== -1) {
-          triggerNewBriefing(); // round advanced (or changed)
-          // keep narration hidden by default on any round change
-          setShowNarration(false);
-        }
-        lastRoundRef.current = currentRound;
-        await loadRoundContent(g);
-        return;
-      }
-
-      // same round:
-      // If we have no content yet but game is playable, try loading.
-      // If content exists, do nothing (keeps reads low).
-      const hasPrivate = !!content?.private_text;
-      if (g.story_generated && currentRound > 0 && !hasPrivate) {
-        await loadRoundContent(g);
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key.toLowerCase() === "p") {
+        setPanicHidden((v) => !v);
       }
     }
-
-    // run once immediately after initial load
-    const kickoff = window.setTimeout(() => {
-      tick().catch(() => {});
-    }, 0);
-
-    const interval = window.setInterval(() => {
-      tick().catch(() => {});
-    }, 2500);
-
-    return () => {
-      stopped = true;
-      window.clearTimeout(kickoff);
-      window.clearInterval(interval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, content?.private_text]);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // ---------- UI states ----------
 
@@ -693,7 +535,9 @@ export default function PlayerPage() {
               </div>
 
               <div style={styles.pills}>
-                <span style={{ ...styles.pill, ...styles.goldHint }}>Fetching signal</span>
+                <span style={{ ...styles.pill, ...styles.goldHint }}>
+                  Fetching signal
+                </span>
               </div>
             </div>
           </div>
@@ -727,7 +571,8 @@ export default function PlayerPage() {
 
             <div style={styles.hr} />
             <div style={styles.errorBox}>
-              If you were sent a screenshot of a link… yes, that can be a problem. Ask the host for the actual URL.
+              If you were sent a screenshot of a link… yes, that can be a
+              problem. Ask the host for the actual URL.
             </div>
           </div>
         </div>
@@ -735,7 +580,7 @@ export default function PlayerPage() {
     );
   }
 
-  // Waiting for story generation (case not ready)
+  // Waiting for story generation (“case not ready”)
   if (!game?.story_generated) {
     return (
       <main style={styles.page}>
@@ -748,14 +593,18 @@ export default function PlayerPage() {
                 <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
                 <h2 style={styles.title}>Case not ready</h2>
                 <p style={{ ...styles.sub, ...styles.subSpaced }}>
-                  Hello, <b>{player.name}</b>. The host is preparing the case.
+                  Hello, <b>{player.name}</b>. The case hasn’t been released.
                   <br />
-                  Your private briefing will appear automatically when it goes live.
+                  Your private prompts will appear automatically once the host
+                  begins.
                 </p>
               </div>
 
               <div style={styles.pills}>
-                <span style={{ ...styles.pill, ...styles.goldHint }}>Status: Stand by</span>
+                <span style={styles.pill}>
+                  <span style={styles.dot} />
+                  Status: Waiting
+                </span>
                 <span style={styles.pill}>
                   Code: <span style={styles.mono}>{player.code}</span>
                 </span>
@@ -763,16 +612,9 @@ export default function PlayerPage() {
             </div>
 
             <div style={styles.hr} />
-            <p style={styles.sub}>Keep this page open. No refresh needed.</p>
-
-            {lastCheckedTs ? (
-              <div style={styles.lastChecked}>
-                Last checked:{" "}
-                <span style={styles.mono}>
-                  {new Date(lastCheckedTs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                </span>
-              </div>
-            ) : null}
+            <p style={styles.sub}>
+              Keep this page open. No refresh needed.
+            </p>
           </div>
         </div>
       </main>
@@ -796,12 +638,16 @@ export default function PlayerPage() {
                 <p style={{ ...styles.sub, ...styles.subSpaced }}>
                   Hello, <b>{player.name}</b>. The case hasn’t started yet.
                   <br />
-                  When Round 1 begins, your private briefing will appear here.
+                  When Round 1 begins, your private instructions will appear
+                  here.
                 </p>
               </div>
 
               <div style={styles.pills}>
-                <span style={{ ...styles.pill, ...styles.goldHint }}>Status: Waiting</span>
+                <span style={styles.pill}>
+                  <span style={styles.dot} />
+                  Status: Waiting
+                </span>
                 <span style={styles.pill}>
                   Code: <span style={styles.mono}>{player.code}</span>
                 </span>
@@ -809,23 +655,17 @@ export default function PlayerPage() {
             </div>
 
             <div style={styles.hr} />
-            <p style={styles.sub}>Pro tip: don’t close this tab. You’ll update quietly when it’s time.</p>
-
-            {lastCheckedTs ? (
-              <div style={styles.lastChecked}>
-                Last checked:{" "}
-                <span style={styles.mono}>
-                  {new Date(lastCheckedTs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                </span>
-              </div>
-            ) : null}
+            <p style={styles.sub}>
+              Pro tip: don’t close this tab. The host controls pacing — you’ll
+              update quietly when rounds advance.
+            </p>
           </div>
         </div>
       </main>
     );
   }
 
-  // Content missing (round started, but private prompt not released)
+  // Content missing
   if (!content || !content.private_text) {
     return (
       <main style={styles.page}>
@@ -838,14 +678,17 @@ export default function PlayerPage() {
                 <p style={styles.tagline}>THE NARRATION IS LIVE.</p>
                 <h2 style={styles.title}>Round {currentRound}</h2>
                 <p style={{ ...styles.sub, ...styles.subSpaced }}>
-                  Hello, <b>{player.name}</b>. Your private briefing hasn’t been released yet.
+                  Hello, <b>{player.name}</b>. Your briefing hasn’t been
+                  released yet.
                   <br />
                   Hold position. It will appear automatically.
                 </p>
               </div>
 
               <div style={styles.pills}>
-                <span style={{ ...styles.pill, ...styles.goldHint }}>Awaiting briefing</span>
+                <span style={{ ...styles.pill, ...styles.goldHint }}>
+                  Awaiting briefing
+                </span>
                 <span style={styles.pill}>
                   Code: <span style={styles.mono}>{player.code}</span>
                 </span>
@@ -854,15 +697,6 @@ export default function PlayerPage() {
 
             <div style={styles.hr} />
             <p style={styles.sub}>No refresh needed. You’re not missing anything. Yet.</p>
-
-            {lastCheckedTs ? (
-              <div style={styles.lastChecked}>
-                Last checked:{" "}
-                <span style={styles.mono}>
-                  {new Date(lastCheckedTs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                </span>
-              </div>
-            ) : null}
           </div>
         </div>
       </main>
@@ -873,7 +707,6 @@ export default function PlayerPage() {
   return (
     <main style={styles.page}>
       <div style={styles.vignette} />
-
       <div style={styles.wrap}>
         <div style={styles.topCard}>
           <div style={styles.headerRow}>
@@ -892,18 +725,14 @@ export default function PlayerPage() {
                 ON AIR
               </span>
 
-              {newBriefing ? (
-                <span style={{ ...styles.pill, ...styles.newPill }}>NEW BRIEFING</span>
-              ) : null}
-
               <button
                 type="button"
                 style={styles.panicBtn}
-                onClick={() => setPanicHidden((v) => !v)}
-                aria-label={panicHidden ? "Reveal briefing" : "Panic hide briefing"}
-                title={panicHidden ? "Reveal briefing" : "Panic hide (conceal on screen)"}
+                onClick={() => setPanicHidden(true)}
+                aria-label="Panic hide"
+                title="Panic hide (shortcut: P)"
               >
-                {panicHidden ? "Reveal" : "Panic hide"}
+                Panic hide
               </button>
 
               <button
@@ -929,20 +758,48 @@ export default function PlayerPage() {
             </div>
 
             <div style={styles.privateBox}>
-              <pre style={styles.pre}>{content.private_text}</pre>
-
               {panicHidden ? (
-                <div style={styles.panicOverlay} role="button" onClick={() => setPanicHidden(false)} aria-label="Reveal briefing">
-                  <div style={styles.panicOverlayInner}>
-                    <p style={styles.panicTitle}>Briefing concealed</p>
-                    <p style={styles.panicSub}>
-                      Tap to reveal.
-                      <br />
-                      (If someone is behind you — you did the right thing.)
-                    </p>
+                <>
+                  {/* ✅ Decoy: redacted lines */}
+                  <div style={styles.redactedWrap} aria-hidden>
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          ...styles.redactedLine,
+                          width: `${86 - (i % 5) * 10}%`,
+                          opacity: 0.52 + (i % 3) * 0.12,
+                        }}
+                      />
+                    ))}
                   </div>
-                </div>
-              ) : null}
+
+                  {/* ✅ Strong overlay: real text is NOT rendered at all */}
+                  <div
+                    style={styles.panicOverlayStrong}
+                    role="button"
+                    onClick={() => setPanicHidden(false)}
+                    aria-label="Reveal briefing"
+                    title="Tap to reveal (shortcut: P)"
+                  >
+                    <div style={styles.panicOverlayInner}>
+                      <p style={styles.panicTitle}>Briefing concealed</p>
+                      <p style={styles.panicSub}>
+                        Tap to reveal.
+                        <br />
+                        (Shortcut: press <b>P</b>.)
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <pre style={styles.pre}>{content.private_text}</pre>
+              )}
+            </div>
+
+            {/* ✅ Better timing guidance: act when narration finishes (host audio) */}
+            <div style={styles.hintLine}>
+              Don’t act immediately. Wait until the host finishes narration — then execute your instructions.
             </div>
 
             {showNarration ? (
@@ -950,7 +807,9 @@ export default function PlayerPage() {
                 <div style={styles.hr} />
                 <div style={styles.narrationHeader}>
                   <p style={styles.narrationTitle}>Narration (text)</p>
-                  <span style={styles.narrationSmall}>Starts action when it finishes</span>
+                  <span style={styles.narrationSmall}>
+                    Reference only — host audio controls timing
+                  </span>
                 </div>
                 <div style={styles.narrationBox}>
                   <pre style={styles.pre}>
@@ -960,36 +819,12 @@ export default function PlayerPage() {
               </>
             ) : null}
 
-            {lastCheckedTs ? (
-              <div style={styles.lastChecked}>
-                Last checked:{" "}
-                <span style={styles.mono}>
-                  {new Date(lastCheckedTs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                </span>
-              </div>
-            ) : null}
-
             <p style={styles.footerHint}>
               Keep this open. The host controls pacing — your screen updates quietly when rounds advance.
               <br />
-              When narration ends, that’s your cue.
+              And yes, it’s supposed to feel a little dramatic.
             </p>
           </div>
-        </div>
-      </div>
-
-      {/* Sticky panic button (helps on mobile when scrolling) */}
-      <div style={styles.stickyBar} aria-hidden={false}>
-        <div style={styles.stickyInner}>
-          <button
-            type="button"
-            style={styles.panicBtn}
-            onClick={() => setPanicHidden((v) => !v)}
-            aria-label={panicHidden ? "Reveal briefing" : "Panic hide briefing"}
-            title={panicHidden ? "Reveal briefing" : "Panic hide (conceal on screen)"}
-          >
-            {panicHidden ? "Reveal" : "Panic hide"}
-          </button>
         </div>
       </div>
     </main>
