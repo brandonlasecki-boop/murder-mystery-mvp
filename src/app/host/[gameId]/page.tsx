@@ -42,7 +42,6 @@ function fmtTime(sec: number) {
  * Cinematic Audio Console
  * - Tries REAL analyser (WebAudio) for dynamic EQ
  * - If Supabase Storage CORS blocks analyser data, auto-falls back to a subtle “alive” mode
- *   so it still feels cinematic and reactive instead of dead bars.
  * - Audio ALWAYS plays (fallback connection to ctx.destination)
  */
 function AudioConsole(props: {
@@ -146,7 +145,9 @@ function AudioConsole(props: {
       }
 
       // Allocate strict buffer
-      freqRef.current = new Uint8Array<ArrayBuffer>(new ArrayBuffer(analyser.frequencyBinCount));
+      freqRef.current = new Uint8Array<ArrayBuffer>(
+        new ArrayBuffer(analyser.frequencyBinCount)
+      );
 
       // IMPORTANT: ensure sound always routes to destination.
       try {
@@ -164,7 +165,6 @@ function AudioConsole(props: {
           sourceRef.current.connect(ctx.destination);
         } catch {
           // If this fails, browser may output silence after MediaElementSource was created.
-          // Nothing safe to do besides reload, but this is extremely uncommon.
         }
       }
     }
@@ -220,31 +220,25 @@ function AudioConsole(props: {
       for (let i = 0; i < freqArr.length; i += 32) total += freqArr[i];
       const looksZero = total < 4; // heuristic
 
-      if (looksZero) {
-        zeroFramesRef.current += 1;
-      } else {
-        zeroFramesRef.current = 0;
-      }
+      if (looksZero) zeroFramesRef.current += 1;
+      else zeroFramesRef.current = 0;
 
       if (zeroFramesRef.current > 20) {
-        // Switch to fallback visuals so it never feels broken
         setMeterMode("fallback");
         stopMetering();
-        // Restart metering in fallback mode
         setTimeout(() => {
           if (playing) startMetering();
         }, 0);
         return;
       }
 
-      // tuned for voice (not bass-heavy)
+      // tuned for voice
       const b1 = band(0.02, 0.08);
       const b2 = band(0.08, 0.16);
       const b3 = band(0.16, 0.26);
       const b4 = band(0.26, 0.38);
       const b5 = band(0.38, 0.55);
 
-      // Make speech feel alive
       const boosted = [
         Math.max(0.14, Math.min(1, b1 * 2.25)),
         Math.max(0.14, Math.min(1, b2 * 2.2)),
@@ -253,7 +247,14 @@ function AudioConsole(props: {
         Math.max(0.1, Math.min(1, b5 * 1.6)),
       ];
 
-      const e = Math.min(1, boosted[0] * 0.28 + boosted[1] * 0.26 + boosted[2] * 0.2 + boosted[3] * 0.14 + boosted[4] * 0.12);
+      const e = Math.min(
+        1,
+        boosted[0] * 0.28 +
+          boosted[1] * 0.26 +
+          boosted[2] * 0.2 +
+          boosted[3] * 0.14 +
+          boosted[4] * 0.12
+      );
 
       setBars(boosted);
       setEnergy(e);
@@ -330,7 +331,10 @@ function AudioConsole(props: {
     const el = audioRef.current;
     if (!el || !src) return;
     const d = el.duration || 0;
-    const next = Math.max(0, Math.min(d || Number.MAX_SAFE_INTEGER, (el.currentTime || 0) + delta));
+    const next = Math.max(
+      0,
+      Math.min(d || Number.MAX_SAFE_INTEGER, (el.currentTime || 0) + delta)
+    );
     el.currentTime = next;
     syncFromEl(el);
   }
@@ -354,15 +358,27 @@ function AudioConsole(props: {
   const glow = 0.12 + energy * 0.38;
   const railGlow = 0.18 + energy * 0.32;
 
+  // used for subtle scanline drift
+  const scanYOffset = Math.round(energy * 10);
+
   return (
-    <div className={`acWrap ${compact ? "acCompact" : ""} ${playing ? "acIsPlaying" : ""} ${disabled ? "acDisabled" : ""}`}>
+    <div
+      className={`acWrap ${compact ? "acCompact" : ""} ${
+        playing ? "acIsPlaying" : ""
+      } ${disabled ? "acDisabled" : ""}`}
+    >
       <style jsx>{`
         .acWrap {
           border-radius: 18px;
           padding: 14px;
           border: 1px solid rgba(212, 175, 55, 0.26);
-          background: linear-gradient(180deg, rgba(16, 18, 22, 0.66), rgba(0, 0, 0, 0.22));
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 62px rgba(0, 0, 0, 0.56);
+          background: linear-gradient(
+            180deg,
+            rgba(16, 18, 22, 0.66),
+            rgba(0, 0, 0, 0.22)
+          );
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
+            0 18px 62px rgba(0, 0, 0, 0.56);
           position: relative;
           overflow: hidden;
         }
@@ -372,7 +388,11 @@ function AudioConsole(props: {
           position: absolute;
           inset: -160px -160px auto -160px;
           height: 300px;
-          background: radial-gradient(600px 280px at 30% 40%, rgba(212, 175, 55, ${glow}), transparent 60%);
+          background: radial-gradient(
+            600px 280px at 30% 40%,
+            rgba(212, 175, 55, ${glow}),
+            transparent 60%
+          );
           pointer-events: none;
         }
 
@@ -381,7 +401,13 @@ function AudioConsole(props: {
           position: absolute;
           inset: 0;
           pointer-events: none;
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 24%, transparent 76%, rgba(0, 0, 0, 0.22));
+          background: linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.04),
+            transparent 24%,
+            transparent 76%,
+            rgba(0, 0, 0, 0.22)
+          );
           opacity: 0.9;
         }
 
@@ -416,7 +442,16 @@ function AudioConsole(props: {
           letter-spacing: 0.2px;
           font-size: 15px;
           line-height: 1.25;
-          font-family: var(--sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+          font-family: var(
+            --sans,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            Segoe UI,
+            Roboto,
+            Helvetica,
+            Arial
+          );
         }
 
         .acRight {
@@ -433,7 +468,16 @@ function AudioConsole(props: {
           font-size: 12px;
           line-height: 1.35;
           max-width: 78ch;
-          font-family: var(--sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+          font-family: var(
+            --sans,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            Segoe UI,
+            Roboto,
+            Helvetica,
+            Arial
+          );
         }
 
         .acTag {
@@ -448,7 +492,17 @@ function AudioConsole(props: {
           text-transform: uppercase;
           white-space: nowrap;
           color: rgba(255, 255, 255, 0.78);
-          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+          font-family: var(
+            --mono,
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            "Liberation Mono",
+            "Courier New",
+            monospace
+          );
         }
 
         .acLive {
@@ -465,7 +519,17 @@ function AudioConsole(props: {
           text-transform: uppercase;
           white-space: nowrap;
           color: rgba(212, 175, 55, 0.98);
-          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+          font-family: var(
+            --mono,
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            "Liberation Mono",
+            "Courier New",
+            monospace
+          );
         }
 
         .acDot {
@@ -473,7 +537,8 @@ function AudioConsole(props: {
           height: 10px;
           border-radius: 999px;
           background: rgba(177, 29, 42, 1);
-          box-shadow: 0 0 0 4px rgba(177, 29, 42, 0.22), 0 0 22px rgba(177, 29, 42, 0.65);
+          box-shadow: 0 0 0 4px rgba(177, 29, 42, 0.22),
+            0 0 22px rgba(177, 29, 42, 0.65);
           display: inline-block;
         }
 
@@ -496,28 +561,111 @@ function AudioConsole(props: {
           }
         }
 
+        /* ✅ Upgraded EQ: device surface + LED pillars + grid + scan shimmer + hot caps */
         .acEq {
           position: relative;
-          width: 90px;
-          height: 34px;
+          width: 120px;
+          height: 40px;
           display: flex;
           align-items: flex-end;
           justify-content: center;
-          gap: 6px;
-          padding: 6px 10px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(0, 0, 0, 0.18);
+          gap: 7px;
+          padding: 8px 12px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: linear-gradient(
+            180deg,
+            rgba(0, 0, 0, 0.22),
+            rgba(0, 0, 0, 0.12)
+          );
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          overflow: hidden;
           z-index: 1;
         }
 
+        .acEqGrid {
+          position: absolute;
+          inset: 0;
+          background-image: linear-gradient(
+              rgba(255, 255, 255, 0.06) 1px,
+              transparent 1px
+            ),
+            linear-gradient(
+              90deg,
+              rgba(255, 255, 255, 0.04) 1px,
+              transparent 1px
+            );
+          background-size: 100% 10px, 12px 100%;
+          opacity: 0.35;
+          pointer-events: none;
+        }
+
+        .acEqScan {
+          position: absolute;
+          inset: -40% 0 -40% 0;
+          background: linear-gradient(
+            180deg,
+            transparent,
+            rgba(212, 175, 55, ${0.06 + energy * 0.12}),
+            transparent
+          );
+          transform: translateY(${scanYOffset}px);
+          opacity: 0.55;
+          pointer-events: none;
+          mix-blend-mode: screen;
+        }
+
+        .barWrap {
+          position: relative;
+          height: 100%;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+
         .bar {
-          width: 7px;
+          width: 100%;
           border-radius: 999px;
-          background: linear-gradient(180deg, rgba(212, 175, 55, 0.55), rgba(177, 29, 42, 0.92));
-          height: 10px;
-          opacity: 0.92;
+          background: linear-gradient(
+            180deg,
+            rgba(212, 175, 55, 0.2),
+            rgba(212, 175, 55, 0.55) 35%,
+            rgba(177, 29, 42, 0.92)
+          );
+          box-shadow: 0 10px 24px rgba(177, 29, 42, ${0.14 + energy * 0.24}),
+            0 0 0 1px rgba(255, 255, 255, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+          opacity: 0.96;
           transform-origin: bottom;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .bar::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.18),
+            transparent 45%,
+            transparent
+          );
+          opacity: 0.35;
+        }
+
+        .barCap {
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 12px;
+          height: 6px;
+          border-radius: 999px;
+          background: rgba(212, 175, 55, ${0.12 + energy * 0.25});
+          box-shadow: 0 0 16px rgba(212, 175, 55, ${0.08 + energy * 0.22}),
+            0 0 26px rgba(177, 29, 42, ${0.06 + energy * 0.18});
+          pointer-events: none;
+          filter: blur(0.2px);
         }
 
         .acControls {
@@ -558,13 +706,21 @@ function AudioConsole(props: {
         .acRailInner {
           height: 100%;
           width: 0%;
-          background: linear-gradient(90deg, rgba(177, 29, 42, 0.92), rgba(212, 175, 55, 0.45));
+          background: linear-gradient(
+            90deg,
+            rgba(177, 29, 42, 0.92),
+            rgba(212, 175, 55, 0.45)
+          );
         }
 
         .acRailShine {
           position: absolute;
           inset: 0;
-          background: linear-gradient(180deg, rgba(255, 255, 255, ${railGlow}), transparent 55%);
+          background: linear-gradient(
+            180deg,
+            rgba(255, 255, 255, ${railGlow}),
+            transparent 55%
+          );
           opacity: 0.32;
           pointer-events: none;
         }
@@ -592,7 +748,17 @@ function AudioConsole(props: {
           letter-spacing: 1.6px;
           text-transform: uppercase;
           color: rgba(255, 255, 255, 0.62);
-          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+          font-family: var(
+            --mono,
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            "Liberation Mono",
+            "Courier New",
+            monospace
+          );
         }
 
         .acTimeVal {
@@ -601,7 +767,17 @@ function AudioConsole(props: {
           font-variant-numeric: tabular-nums;
           min-width: 46px;
           text-align: right;
-          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+          font-family: var(
+            --mono,
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            "Liberation Mono",
+            "Courier New",
+            monospace
+          );
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -649,7 +825,10 @@ function AudioConsole(props: {
             <div className="acRight">
               {rightTag ? <span className="acTag">{rightTag}</span> : null}
 
-              <span className="acLive" title={meterMode === "real" ? "Audio-reactive" : "Cinematic mode"}>
+              <span
+                className="acLive"
+                title={meterMode === "real" ? "Audio-reactive" : "Cinematic mode"}
+              >
                 <span className={`acDot ${playing ? "acDotPulse" : ""}`} />
                 LIVE
               </span>
@@ -659,19 +838,28 @@ function AudioConsole(props: {
           {subtitle ? <div className="acSub">{subtitle}</div> : null}
         </div>
 
+        {/* ✅ Upgraded EQ markup */}
         <div className="acEq" aria-hidden style={{ position: "relative", zIndex: 1 }}>
+          <div className="acEqGrid" aria-hidden />
+          <div className="acEqScan" aria-hidden />
+
           {bars.map((v, i) => {
-            const h = Math.max(0.18, Math.min(1, v));
-            const px = 10 + Math.round(h * 20); // 10..30
-            return <span key={i} className="bar" style={{ height: px }} />;
+            const h = Math.max(0.12, Math.min(1, v));
+            const px = 10 + Math.round(h * 22);
+            const w = ([7, 6, 7, 6, 7][i] ?? 7) as number;
+
+            return (
+              <span key={i} className="barWrap" style={{ width: w }}>
+                <span className="bar" style={{ height: px }} />
+                <span className="barCap" style={{ bottom: px - 2 }} />
+              </span>
+            );
           })}
         </div>
       </div>
 
       <audio
         ref={audioRef}
-        // With Supabase Storage, analyser data can still be blocked by CORS even if audio plays.
-        // crossOrigin helps when CORS is correctly configured.
         crossOrigin="anonymous"
         src={src ?? undefined}
         preload="metadata"
@@ -696,27 +884,47 @@ function AudioConsole(props: {
       />
 
       <div className="acControls">
-        <button className="deadair-btn deadair-btnPrimary" onClick={async () => {
-          await toggle();
-          // ensure graph attaches on the same gesture
-          if (!playing) {
-            try {
-              await ensureAudioGraph();
-            } catch {}
-          }
-        }} disabled={!src} title={!src ? "No audio URL stored yet" : ""}>
+        <button
+          className="deadair-btn deadair-btnPrimary"
+          onClick={async () => {
+            await toggle();
+            // ensure graph attaches on the same gesture
+            if (!playing) {
+              try {
+                await ensureAudioGraph();
+              } catch {}
+            }
+          }}
+          disabled={!src}
+          title={!src ? "No audio URL stored yet" : ""}
+        >
           {playing ? "Pause" : "Play"}
         </button>
 
-        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(-10)} disabled={!src || !ready} title="Replay 10 seconds">
+        <button
+          className="deadair-btn deadair-btnGhost"
+          onClick={() => jump(-10)}
+          disabled={!src || !ready}
+          title="Replay 10 seconds"
+        >
           ↺ 10s
         </button>
 
-        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(10)} disabled={!src || !ready} title="Skip ahead 10 seconds">
+        <button
+          className="deadair-btn deadair-btnGhost"
+          onClick={() => jump(10)}
+          disabled={!src || !ready}
+          title="Skip ahead 10 seconds"
+        >
           10s ↻
         </button>
 
-        <button className="deadair-btn deadair-btnGhost" onClick={restart} disabled={!src} title="Restart narration">
+        <button
+          className="deadair-btn deadair-btnGhost"
+          onClick={restart}
+          disabled={!src}
+          title="Restart narration"
+        >
           Restart
         </button>
       </div>
@@ -898,7 +1106,9 @@ export default function Host() {
 
     const { data: rs, error: rErr } = await supabase
       .from("rounds")
-      .select("round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b")
+      .select(
+        "round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b"
+      )
       .eq("game_id", gameId)
       .order("round_number");
 
@@ -930,7 +1140,10 @@ export default function Host() {
       return;
     }
 
-    const { error } = await supabase.from("games").update({ current_round: nextRound }).eq("id", gameId);
+    const { error } = await supabase
+      .from("games")
+      .update({ current_round: nextRound })
+      .eq("id", gameId);
     if (error) alert(error.message);
     await load();
   }
@@ -983,9 +1196,12 @@ export default function Host() {
             <h2 className="deadair-title" style={{ fontSize: 22 }}>
               Host access blocked
             </h2>
-            <p className="deadair-sub">{errorMsg ?? "Game not found or you don’t have access."}</p>
             <p className="deadair-sub">
-              Make sure you’re using the host link that includes <code>?pin=...</code>.
+              {errorMsg ?? "Game not found or you don’t have access."}
+            </p>
+            <p className="deadair-sub">
+              Make sure you’re using the host link that includes{" "}
+              <code>?pin=...</code>.
             </p>
           </div>
         </div>
@@ -1013,7 +1229,12 @@ export default function Host() {
         }
         .hr {
           height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.12),
+            transparent
+          );
           margin: 14px 0;
         }
         .btnRow {
@@ -1084,7 +1305,11 @@ export default function Host() {
 
         .briefingWrap {
           border: 1px solid rgba(210, 180, 140, 0.26);
-          background: linear-gradient(180deg, rgba(210, 180, 140, 0.14), rgba(0, 0, 0, 0.14));
+          background: linear-gradient(
+            180deg,
+            rgba(210, 180, 140, 0.14),
+            rgba(0, 0, 0, 0.14)
+          );
           border-radius: 16px;
           padding: 12px;
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -1385,7 +1610,8 @@ export default function Host() {
           <div>
             <h1 className="deadair-title">Dead Air</h1>
             <p className="deadair-sub" style={{ letterSpacing: "0.3px" }}>
-              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case file: <span className="mono">{game.id}</span>
+              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span>{" "}
+              Case file: <span className="mono">{game.id}</span>
             </p>
           </div>
 
@@ -1419,9 +1645,21 @@ export default function Host() {
         {/* Status (Setup only) */}
         {currentRound === 0 ? (
           <div className="deadair-card">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
-              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>Status</h3>
-              <div className="small">If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.</div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "baseline",
+              }}
+            >
+              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>
+                Status
+              </h3>
+              <div className="small">
+                If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.
+              </div>
             </div>
 
             <div className="timelineRow">
@@ -1440,7 +1678,9 @@ export default function Host() {
                 <div className="briefingTop">
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                     <span className="deadair-chip">🎧 Host Briefing</span>
-                    <span className="deadair-sub" style={{ margin: 0 }}>Listen first — it prevents “why is nothing working” energy.</span>
+                    <span className="deadair-sub" style={{ margin: 0 }}>
+                      Listen first — it prevents “why is nothing working” energy.
+                    </span>
                   </div>
                   <span className="hintPill">{briefingListened ? "✅ listened" : "📌 play me first"}</span>
                 </div>
@@ -1491,7 +1731,11 @@ export default function Host() {
                   </button>
 
                   {!briefingListened && (
-                    <button className="deadair-btn" style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }} onClick={markBriefingListened}>
+                    <button
+                      className="deadair-btn"
+                      style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }}
+                      onClick={markBriefingListened}
+                    >
                       Mark listened
                     </button>
                   )}
@@ -1546,7 +1790,11 @@ export default function Host() {
                     key={r}
                     onClick={() => requestStartRound(r)}
                     disabled={disabled}
-                    className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
+                    className={[
+                      "deadair-btn",
+                      isCurrent ? "deadair-btnPrimary" : "",
+                      disabled ? "deadair-btnDisabled" : "",
+                    ].join(" ")}
                     title={roundButtonTitle(r)}
                   >
                     {roundButtonLabel(r)}
@@ -1567,7 +1815,11 @@ export default function Host() {
                     key={r}
                     onClick={() => requestStartRound(r)}
                     disabled={disabled}
-                    className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
+                    className={[
+                      "deadair-btn",
+                      isCurrent ? "deadair-btnPrimary" : "",
+                      disabled ? "deadair-btnDisabled" : "",
+                    ].join(" ")}
                     title={roundButtonTitle(r)}
                   >
                     {roundButtonLabel(r)}
@@ -1587,11 +1839,22 @@ export default function Host() {
             <>
               {currentRoundRow?.narration_audio_url ? (
                 <>
-                  <AudioConsole title={`Round ${currentRound} Narration`} subtitle={currentRoundRow?.title ?? undefined} src={currentRoundRow.narration_audio_url} rightTag={currentRound === 4 ? "Part A" : undefined} />
+                  <AudioConsole
+                    title={`Round ${currentRound} Narration`}
+                    subtitle={currentRoundRow?.title ?? undefined}
+                    src={currentRoundRow.narration_audio_url}
+                    rightTag={currentRound === 4 ? "Part A" : undefined}
+                  />
 
                   {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
                     <div style={{ marginTop: 12 }}>
-                      <AudioConsole title="Reveal — Part B" subtitle="Play after final accusations." src={currentRoundRow.narration_audio_url_part_b} rightTag="Part B" compact />
+                      <AudioConsole
+                        title="Reveal — Part B"
+                        subtitle="Play after final accusations."
+                        src={currentRoundRow.narration_audio_url_part_b}
+                        rightTag="Part B"
+                        compact
+                      />
                     </div>
                   ) : null}
                 </>
@@ -1601,10 +1864,24 @@ export default function Host() {
 
               <div className="hr" />
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <div className="small" style={{ marginTop: 0 }}>Narration text (reference)</div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div className="small" style={{ marginTop: 0 }}>
+                  Narration text (reference)
+                </div>
 
-                <button className="deadair-btn deadair-btnGhost" onClick={() => setShowNarrationText((v) => !v)} aria-expanded={showNarrationText}>
+                <button
+                  className="deadair-btn deadair-btnGhost"
+                  onClick={() => setShowNarrationText((v) => !v)}
+                  aria-expanded={showNarrationText}
+                >
                   {showNarrationText ? "Hide text" : "Show text"}
                 </button>
               </div>
@@ -1634,9 +1911,16 @@ export default function Host() {
                         code: <span className="mono">{p.code}</span>
                       </span>
 
-                      <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
+                      <span className="pill pillPrivate">
+                        intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
+                      </span>
 
-                      <button className="deadair-btn deadair-btnGhost" style={{ padding: "8px 10px" }} onClick={() => router.push(`/p/${p.code}`)} title="Open the player page">
+                      <button
+                        className="deadair-btn deadair-btnGhost"
+                        style={{ padding: "8px 10px" }}
+                        onClick={() => router.push(`/p/${p.code}`)}
+                        title="Open the player page"
+                      >
                         👤 Open player view
                       </button>
                     </div>
@@ -1654,11 +1938,27 @@ export default function Host() {
                   </div>
 
                   <div className="btnRow">
-                    <button className="deadair-btn deadair-btnGhost" onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}>
+                    <button
+                      className="deadair-btn deadair-btnGhost"
+                      onClick={() =>
+                        copyToClipboard(
+                          playerIntakeLink(p.code),
+                          `Copied ${p.name}'s intake link`
+                        )
+                      }
+                    >
                       Copy intake link
                     </button>
 
-                    <button className="deadair-btn deadair-btnPrimary" onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}>
+                    <button
+                      className="deadair-btn deadair-btnPrimary"
+                      onClick={() =>
+                        copyToClipboard(
+                          playerJoinLink(p.code),
+                          `Copied ${p.name}'s join link`
+                        )
+                      }
+                    >
                       Copy join link
                     </button>
                   </div>
@@ -1691,9 +1991,16 @@ export default function Host() {
                             code: <span className="mono">{p.code}</span>
                           </span>
 
-                          <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
+                          <span className="pill pillPrivate">
+                            intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
+                          </span>
 
-                          <button className="deadair-btn deadair-btnGhost" style={{ padding: "8px 10px" }} onClick={() => router.push(`/p/${p.code}`)} title="Open the player page">
+                          <button
+                            className="deadair-btn deadair-btnGhost"
+                            style={{ padding: "8px 10px" }}
+                            onClick={() => router.push(`/p/${p.code}`)}
+                            title="Open the player page"
+                          >
                             👤 Open player view
                           </button>
                         </div>
@@ -1711,11 +2018,27 @@ export default function Host() {
                       </div>
 
                       <div className="btnRow">
-                        <button className="deadair-btn deadair-btnGhost" onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}>
+                        <button
+                          className="deadair-btn deadair-btnGhost"
+                          onClick={() =>
+                            copyToClipboard(
+                              playerIntakeLink(p.code),
+                              `Copied ${p.name}'s intake link`
+                            )
+                          }
+                        >
                           Copy intake link
                         </button>
 
-                        <button className="deadair-btn deadair-btnPrimary" onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}>
+                        <button
+                          className="deadair-btn deadair-btnPrimary"
+                          onClick={() =>
+                            copyToClipboard(
+                              playerJoinLink(p.code),
+                              `Copied ${p.name}'s join link`
+                            )
+                          }
+                        >
                           Copy join link
                         </button>
                       </div>
