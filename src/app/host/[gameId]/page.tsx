@@ -68,7 +68,12 @@ function AudioConsole(props: {
   const [time, setTime] = useState({ current: 0, duration: 0 });
   const [ready, setReady] = useState(false);
 
-  const [bars, setBars] = useState<number[]>([0.25, 0.3, 0.22, 0.28, 0.26]);
+  // ✅ More bars for a fuller “console” look
+  const BAR_COUNT = 11;
+
+  const [bars, setBars] = useState<number[]>(
+    Array.from({ length: BAR_COUNT }, (_, i) => 0.18 + 0.06 * Math.sin(i * 0.9))
+  );
   const [energy, setEnergy] = useState(0); // 0..1 (visual energy)
   const [meterMode, setMeterMode] = useState<"real" | "fallback">("real");
 
@@ -88,7 +93,7 @@ function AudioConsole(props: {
     }
     zeroFramesRef.current = 0;
     setEnergy(0);
-    setBars([0.25, 0.3, 0.22, 0.28, 0.26]);
+    setBars(Array.from({ length: BAR_COUNT }, (_, i) => 0.18 + 0.06 * Math.sin(i * 0.9)));
   }
 
   function teardownAudioGraph() {
@@ -137,7 +142,6 @@ function AudioConsole(props: {
         try {
           sourceRef.current = ctx.createMediaElementSource(el);
         } catch {
-          // If this fails (rare), skip metering but do not break playback.
           analyserRef.current = null;
           sourceRef.current = null;
           return;
@@ -154,7 +158,6 @@ function AudioConsole(props: {
         sourceRef.current.connect(analyser);
         analyser.connect(ctx.destination);
       } catch {
-        // fallback: direct
         try {
           sourceRef.current.disconnect();
         } catch {}
@@ -180,15 +183,21 @@ function AudioConsole(props: {
 
       const tickFallback = () => {
         const t = Date.now() / 1000;
-        // “voice-ish” movement: mild, tight range; not rave mode
-        const b1 = 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.4));
-        const b2 = 0.22 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.9 + 0.9));
-        const b3 = 0.2 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.2 + 1.6));
-        const b4 = 0.18 + 0.1 * (0.5 + 0.5 * Math.sin(t * 2.7 + 2.1));
-        const b5 = 0.16 + 0.09 * (0.5 + 0.5 * Math.sin(t * 2.1 + 2.8));
-        const e = Math.min(1, (b1 + b2 + b3 + b4 + b5) / 2.2);
 
-        setBars([b1, b2, b3, b4, b5]);
+        // Subtle “voice-ish” movement across 11 bars
+        const nextBars = Array.from({ length: BAR_COUNT }, (_, i) => {
+          const phase = i * 0.45;
+          const a = 0.14 + 0.06 * (i % 3); // slight variance
+          const v =
+            0.12 +
+            a * (0.5 + 0.5 * Math.sin(t * (2.0 + (i % 4) * 0.22) + phase));
+          return Math.max(0.1, Math.min(1, v));
+        });
+
+        const avg = nextBars.reduce((s, v) => s + v, 0) / nextBars.length;
+        const e = Math.min(1, avg * 1.15);
+
+        setBars(nextBars);
         setEnergy(e);
 
         rafRef.current = requestAnimationFrame(tickFallback);
@@ -215,10 +224,9 @@ function AudioConsole(props: {
       analyser.getByteFrequencyData(freqArr);
 
       // If analyser is blocked by CORS, this often returns near-all zeros forever.
-      // Detect and switch to fallback visuals while keeping audio playback.
       let total = 0;
       for (let i = 0; i < freqArr.length; i += 32) total += freqArr[i];
-      const looksZero = total < 4; // heuristic
+      const looksZero = total < 4;
 
       if (looksZero) zeroFramesRef.current += 1;
       else zeroFramesRef.current = 0;
@@ -232,31 +240,36 @@ function AudioConsole(props: {
         return;
       }
 
-      // tuned for voice
-      const b1 = band(0.02, 0.08);
-      const b2 = band(0.08, 0.16);
-      const b3 = band(0.16, 0.26);
-      const b4 = band(0.26, 0.38);
-      const b5 = band(0.38, 0.55);
-
-      const boosted = [
-        Math.max(0.14, Math.min(1, b1 * 2.25)),
-        Math.max(0.14, Math.min(1, b2 * 2.2)),
-        Math.max(0.14, Math.min(1, b3 * 2.0)),
-        Math.max(0.12, Math.min(1, b4 * 1.85)),
-        Math.max(0.1, Math.min(1, b5 * 1.6)),
+      // ✅ Build 11 bars over speech-friendly spectrum
+      // Concentrate more resolution in lows/mids (speech intelligibility),
+      // taper highs so it doesn’t look like rave mode.
+      const ranges: Array<[number, number, number]> = [
+        [0.02, 0.06, 2.35],
+        [0.06, 0.09, 2.30],
+        [0.09, 0.12, 2.20],
+        [0.12, 0.15, 2.10],
+        [0.15, 0.19, 2.00],
+        [0.19, 0.24, 1.90],
+        [0.24, 0.30, 1.75],
+        [0.30, 0.37, 1.62],
+        [0.37, 0.45, 1.48],
+        [0.45, 0.55, 1.34],
+        [0.55, 0.68, 1.22],
       ];
 
-      const e = Math.min(
-        1,
-        boosted[0] * 0.28 +
-          boosted[1] * 0.26 +
-          boosted[2] * 0.2 +
-          boosted[3] * 0.14 +
-          boosted[4] * 0.12
-      );
+      const nextBars = ranges.map(([a, b, gain]) => {
+        const v = band(a, b) * gain;
+        // Keep a tasteful floor so it feels “alive”
+        return Math.max(0.1, Math.min(1, v));
+      });
 
-      setBars(boosted);
+      // Energy = weighted avg favoring mid-bands
+      const w = [0.11, 0.11, 0.11, 0.11, 0.1, 0.09, 0.09, 0.08, 0.07, 0.06, 0.07];
+      let e = 0;
+      for (let i = 0; i < nextBars.length; i++) e += nextBars[i] * (w[i] ?? 0);
+      e = Math.min(1, e * 1.15);
+
+      setBars(nextBars);
       setEnergy(e);
 
       rafRef.current = requestAnimationFrame(tick);
@@ -357,9 +370,20 @@ function AudioConsole(props: {
 
   const glow = 0.12 + energy * 0.38;
   const railGlow = 0.18 + energy * 0.32;
-
-  // used for subtle scanline drift
   const scanYOffset = Math.round(energy * 10);
+
+  // ✅ Ensure bars never exceed their container:
+  // .acEq height is 44; padding is 8 top/bottom => inner ~28px
+  // We'll clamp bar px to MAX_BAR_PX to avoid overflow and weird cap placement.
+  const MAX_BAR_PX = 28;
+
+  // widths per bar to avoid uniform “cheap sticks”
+  const widths = useMemo(() => {
+    const base = [6, 5, 6, 5, 6, 5, 6, 5, 6, 5, 6];
+    // If BAR_COUNT changes, generate a pattern
+    if (base.length === BAR_COUNT) return base;
+    return Array.from({ length: BAR_COUNT }, (_, i) => (i % 2 === 0 ? 6 : 5));
+  }, [BAR_COUNT]);
 
   return (
     <div
@@ -561,15 +585,15 @@ function AudioConsole(props: {
           }
         }
 
-        /* ✅ Upgraded EQ: device surface + LED pillars + grid + scan shimmer + hot caps */
+        /* ✅ Upgraded EQ: wider + more bars + bars stay inside */
         .acEq {
           position: relative;
-          width: 120px;
-          height: 40px;
+          width: 220px;
+          height: 44px;
           display: flex;
           align-items: flex-end;
           justify-content: center;
-          gap: 7px;
+          gap: 6px;
           padding: 8px 12px;
           border-radius: 16px;
           border: 1px solid rgba(255, 255, 255, 0.14);
@@ -579,10 +603,11 @@ function AudioConsole(props: {
             rgba(0, 0, 0, 0.12)
           );
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-          overflow: hidden;
+          overflow: hidden; /* keeps everything inside */
           z-index: 1;
         }
 
+        /* grid */
         .acEqGrid {
           position: absolute;
           inset: 0;
@@ -600,6 +625,7 @@ function AudioConsole(props: {
           pointer-events: none;
         }
 
+        /* scan shimmer */
         .acEqScan {
           position: absolute;
           inset: -40% 0 -40% 0;
@@ -613,6 +639,68 @@ function AudioConsole(props: {
           opacity: 0.55;
           pointer-events: none;
           mix-blend-mode: screen;
+        }
+
+        /* VU label + tick rail on right edge */
+        .acVu {
+          position: absolute;
+          right: 8px;
+          top: 8px;
+          bottom: 8px;
+          width: 26px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          pointer-events: none;
+          z-index: 2;
+        }
+        .acVuLabel {
+          font-size: 10px;
+          letter-spacing: 1.6px;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.62);
+          font-family: var(
+            --mono,
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            "Liberation Mono",
+            "Courier New",
+            monospace
+          );
+          text-align: right;
+        }
+        .acVuTicks {
+          flex: 1 1 auto;
+          margin-top: 4px;
+          margin-bottom: 2px;
+          display: grid;
+          grid-template-rows: repeat(6, 1fr);
+          gap: 0;
+          align-items: center;
+          justify-items: end;
+        }
+        .acVuTick {
+          width: 12px;
+          height: 1px;
+          background: rgba(255, 255, 255, 0.18);
+          opacity: 0.55;
+        }
+        .acVuNeedle {
+          position: absolute;
+          right: 8px;
+          bottom: 8px;
+          width: 14px;
+          height: 2px;
+          background: rgba(212, 175, 55, ${0.12 + energy * 0.6});
+          box-shadow: 0 0 16px rgba(212, 175, 55, ${0.08 + energy * 0.38}),
+            0 0 22px rgba(177, 29, 42, ${0.06 + energy * 0.24});
+          transform-origin: right center;
+          transform: translateY(${Math.round(-(energy * 26))}px);
+          border-radius: 999px;
+          pointer-events: none;
         }
 
         .barWrap {
@@ -838,20 +926,37 @@ function AudioConsole(props: {
           {subtitle ? <div className="acSub">{subtitle}</div> : null}
         </div>
 
-        {/* ✅ Upgraded EQ markup */}
+        {/* ✅ Upgraded EQ markup (11 bars + VU ticks + clamped heights) */}
         <div className="acEq" aria-hidden style={{ position: "relative", zIndex: 1 }}>
           <div className="acEqGrid" aria-hidden />
           <div className="acEqScan" aria-hidden />
 
+          <div className="acVu" aria-hidden>
+            <div className="acVuLabel">LVL</div>
+            <div className="acVuTicks">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="acVuTick" />
+              ))}
+            </div>
+          </div>
+
+          <div className="acVuNeedle" aria-hidden />
+
           {bars.map((v, i) => {
-            const h = Math.max(0.12, Math.min(1, v));
-            const px = 10 + Math.round(h * 22);
-            const w = ([7, 6, 7, 6, 7][i] ?? 7) as number;
+            const h = Math.max(0.1, Math.min(1, v));
+            // px range: 8..(MAX_BAR_PX)
+            const pxRaw = 8 + Math.round(h * (MAX_BAR_PX - 8));
+            const px = Math.max(8, Math.min(MAX_BAR_PX, pxRaw));
+
+            // cap stays inside: clamp bottom between 0..(MAX_BAR_PX-6)
+            const capBottom = Math.max(0, Math.min(MAX_BAR_PX - 6, px - 2));
+
+            const w = widths[i] ?? 6;
 
             return (
               <span key={i} className="barWrap" style={{ width: w }}>
                 <span className="bar" style={{ height: px }} />
-                <span className="barCap" style={{ bottom: px - 2 }} />
+                <span className="barCap" style={{ bottom: capBottom }} />
               </span>
             );
           })}
@@ -888,7 +993,6 @@ function AudioConsole(props: {
           className="deadair-btn deadair-btnPrimary"
           onClick={async () => {
             await toggle();
-            // ensure graph attaches on the same gesture
             if (!playing) {
               try {
                 await ensureAudioGraph();
