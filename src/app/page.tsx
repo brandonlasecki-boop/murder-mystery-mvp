@@ -189,6 +189,7 @@ export default function LandingPage() {
           font-weight: 900;
           font-family: ${theme.sans};
           letter-spacing: 0.2px;
+          min-height: 44px; /* ✅ tap target */
         }
         .btn:hover {
           border-color: rgba(255, 255, 255, 0.2);
@@ -243,6 +244,7 @@ export default function LandingPage() {
           font-family: ${theme.sans};
           font-weight: 800;
           letter-spacing: 0.2px;
+          min-height: 44px; /* ✅ tap target */
         }
         .menuItem:hover {
           background: rgba(255, 255, 255, 0.06);
@@ -292,8 +294,38 @@ export default function LandingPage() {
           align-items: start;
         }
         @media (max-width: 900px) {
+          .wrap {
+            padding: 16px 14px 60px;
+          }
+          .nav {
+            padding: 6px 0 4px;
+            gap: 10px;
+          }
+          .brand {
+            min-width: unset;
+            flex: 1 1 auto;
+          }
+          .navRight {
+            width: 100%;
+            justify-content: flex-start;
+          }
+          .pill {
+            width: 100%;
+            justify-content: center;
+          }
+          .menuWrap {
+            flex: 1 1 auto;
+          }
+          .menuBtn {
+            width: 100%;
+            justify-content: center;
+          }
+          .hero {
+            padding: 14px;
+          }
           .heroRow {
             grid-template-columns: 1fr;
+            gap: 12px;
           }
         }
 
@@ -314,7 +346,7 @@ export default function LandingPage() {
         }
         @media (max-width: 520px) {
           .h1 {
-            font-size: 34px;
+            font-size: 32px; /* slightly tighter */
           }
         }
         .sub {
@@ -331,6 +363,16 @@ export default function LandingPage() {
           gap: 10px;
           flex-wrap: wrap;
           align-items: center;
+        }
+        @media (max-width: 900px) {
+          .heroActions {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          .heroActions .btn {
+            width: 100%;
+          }
         }
 
         .trustRow {
@@ -351,6 +393,13 @@ export default function LandingPage() {
           border: 1px solid rgba(255, 255, 255, 0.12);
           background: rgba(0, 0, 0, 0.14);
         }
+        @media (max-width: 900px) {
+          .trustItem {
+            width: 100%;
+            justify-content: center;
+            text-align: center;
+          }
+        }
 
         /* Host access card */
         .hostCard {
@@ -359,6 +408,11 @@ export default function LandingPage() {
           background: rgba(0, 0, 0, 0.22);
           padding: 14px;
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        @media (max-width: 900px) {
+          .hostCard {
+            padding: 14px;
+          }
         }
         .hostTitle {
           font-size: 12px;
@@ -391,14 +445,15 @@ export default function LandingPage() {
         }
         .input {
           width: 100%;
-          padding: 10px 12px;
+          padding: 12px 12px;
           border-radius: 12px;
           border: 1px solid rgba(255, 255, 255, 0.14);
           background: rgba(16, 18, 22, 0.65);
           color: rgba(255, 255, 255, 0.92);
           outline: none;
           font-family: ${theme.mono};
-          font-size: 12px;
+          font-size: 14px; /* ✅ more readable on mobile */
+          min-height: 44px; /* ✅ tap target */
         }
         .input:focus {
           border-color: rgba(212, 175, 55, 0.35);
@@ -410,6 +465,16 @@ export default function LandingPage() {
           flex-wrap: wrap;
           align-items: center;
           margin-top: 4px;
+        }
+        @media (max-width: 900px) {
+          .hostBtns {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          .hostBtns .btn {
+            width: 100%;
+          }
         }
         .err {
           margin-top: 8px;
@@ -433,6 +498,11 @@ export default function LandingPage() {
             rgba(16, 18, 22, 0.42)
           );
           box-shadow: 0 14px 55px rgba(0, 0, 0, 0.45);
+        }
+        @media (max-width: 900px) {
+          .section {
+            padding: 14px;
+          }
         }
         .sectionTitle {
           margin: 0;
@@ -579,6 +649,14 @@ export default function LandingPage() {
           background: rgba(0, 0, 0, 0.14);
           color: rgba(255, 255, 255, 0.72);
         }
+        @media (max-width: 900px) {
+          .reviewFooter {
+            align-items: flex-start;
+          }
+          .badge {
+            align-self: flex-start;
+          }
+        }
 
         /* How it works */
         .steps {
@@ -635,6 +713,11 @@ export default function LandingPage() {
           border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.12);
           background: rgba(0, 0, 0, 0.18);
+        }
+        @media (max-width: 900px) {
+          .priceCard {
+            padding: 14px;
+          }
         }
         .priceTop {
           display: flex;
@@ -707,6 +790,9 @@ export default function LandingPage() {
           font-weight: 900;
           color: rgba(255, 255, 255, 0.92);
           list-style: none;
+          min-height: 44px; /* ✅ tap target */
+          display: flex;
+          align-items: center;
         }
         summary::-webkit-details-marker {
           display: none;
@@ -732,9 +818,17 @@ export default function LandingPage() {
         .footer a {
           color: rgba(255, 255, 255, 0.72);
           text-decoration: none;
+          padding: 8px 0; /* easier taps */
         }
         .footer a:hover {
           text-decoration: underline;
+        }
+
+        /* ✅ Mobile niceties: prevent layout squeeze in small phones */
+        @media (max-width: 520px) {
+          .menu {
+            width: min(92vw, 260px);
+          }
         }
       `}</style>
 
@@ -776,24 +870,27 @@ export default function LandingPage() {
                     How it works{" "}
                     <span className="menuSub">The flow in 60 seconds</span>
                   </button>
-                  <button className="menuItem" onClick={goPricing} role="menuitem">
-                    Pricing{" "}
-                    <span className="menuSub">$10 / player · locked</span>
+                  <button
+                    className="menuItem"
+                    onClick={goPricing}
+                    role="menuitem"
+                  >
+                    Pricing <span className="menuSub">$10 / player · locked</span>
                   </button>
                   <button
                     className="menuItem"
                     onClick={() => goToId("host")}
                     role="menuitem"
                   >
-                    Host login{" "}
-                    <span className="menuSub">
-                      Purchase code → dashboard
-                    </span>
+                    Host access{" "}
+                    <span className="menuSub">Purchase code → dashboard</span>
                   </button>
                   <div className="menuHr" />
                   <button
                     className="menuItem"
-                    onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                    onClick={() =>
+                      window.scrollTo({ top: 0, behavior: "smooth" })
+                    }
                     role="menuitem"
                   >
                     Back to top <span className="menuSub">Return to hero</span>
@@ -839,9 +936,7 @@ export default function LandingPage() {
                 >
                   See the vibe
                 </button>
-                <button className="btn btnGold" onClick={() => goToId("host")}>
-                  Host login
-                </button>
+                {/* ✅ Removed the redundant Host login button here */}
               </div>
 
               <div className="trustRow">
@@ -869,6 +964,7 @@ export default function LandingPage() {
                     onChange={(e) => setPurchaseCode(e.target.value)}
                     placeholder="e.g. DA-8H3K-29QF"
                     autoComplete="off"
+                    inputMode="text"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") goHostWithPurchaseCode();
                     }}
@@ -876,7 +972,10 @@ export default function LandingPage() {
                 </div>
 
                 <div className="hostBtns">
-                  <button className="btn btnPrimary" onClick={goHostWithPurchaseCode}>
+                  <button
+                    className="btn btnPrimary"
+                    onClick={goHostWithPurchaseCode}
+                  >
                     Open dashboard →
                   </button>
                   <button
@@ -1004,7 +1103,9 @@ export default function LandingPage() {
 
                 <div className="reviewFooter">
                   <div className="reviewer">
-                    <div className="avatar">{r.name.slice(0, 1).toUpperCase()}</div>
+                    <div className="avatar">
+                      {r.name.slice(0, 1).toUpperCase()}
+                    </div>
                     <div>
                       <div className="reviewerName">{r.name}</div>
                       <div className="reviewerMeta">{r.meta}</div>
@@ -1030,8 +1131,8 @@ export default function LandingPage() {
               <div className="stepNum">Step 1</div>
               <div className="stepTitle">Set up players</div>
               <div className="stepBody">
-                Create a game, assign players, and (optionally) add emails so you can
-                send intake links.
+                Create a game, assign players, and (optionally) add emails so you
+                can send intake links.
               </div>
             </div>
 
@@ -1039,8 +1140,8 @@ export default function LandingPage() {
               <div className="stepNum">Step 2</div>
               <div className="stepTitle">Collect all intakes</div>
               <div className="stepBody">
-                Players do it on their phone — or the host fills them out. Story generation
-                stays locked until all are complete.
+                Players do it on their phone — or the host fills them out. Story
+                generation stays locked until all are complete.
               </div>
             </div>
 
@@ -1048,7 +1149,8 @@ export default function LandingPage() {
               <div className="stepNum">Step 3</div>
               <div className="stepTitle">Play 4 rounds</div>
               <div className="stepBody">
-                Narrator drives the beats. Host starts each round. No eliminations — everyone stays in.
+                Narrator drives the beats. Host starts each round. No
+                eliminations — everyone stays in.
               </div>
             </div>
           </div>
@@ -1068,22 +1170,33 @@ export default function LandingPage() {
 
               <div className="priceValue">$10 / player</div>
               <div className="priceNote">
-                Your case is built from the group’s intakes, then delivered to your host dashboard.
+                Your case is built from the group’s intakes, then delivered to
+                your host dashboard.
               </div>
 
               <ul className="ul">
                 <li className="li">
-                  <span className="check">✓</span> 4 rounds, host-paced, audio-first narration
+                  <span className="check">✓</span> 4 rounds, host-paced,
+                  audio-first narration
                 </li>
                 <li className="li">
-                  <span className="check">✓</span> Private prompts per player, per round
+                  <span className="check">✓</span> Private prompts per player,
+                  per round
                 </li>
                 <li className="li">
-                  <span className="check">✓</span> Boundaries collected (keep it fun, not harmful)
+                  <span className="check">✓</span> Boundaries collected (keep it
+                  fun, not harmful)
                 </li>
               </ul>
 
-              <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
                 <button className="btn btnPrimary" onClick={goPricing}>
                   Buy a pack →
                 </button>
@@ -1105,16 +1218,20 @@ export default function LandingPage() {
 
               <ul className="ul" style={{ marginTop: 12 }}>
                 <li className="li">
-                  <span className="check">✓</span> Host controls pacing (no chaos branching)
+                  <span className="check">✓</span> Host controls pacing (no
+                  chaos branching)
                 </li>
                 <li className="li">
-                  <span className="check">✓</span> No one is eliminated (everyone stays engaged)
+                  <span className="check">✓</span> No one is eliminated
+                  (everyone stays engaged)
                 </li>
                 <li className="li">
-                  <span className="check">✓</span> Players don’t see future rounds early
+                  <span className="check">✓</span> Players don’t see future
+                  rounds early
                 </li>
                 <li className="li">
-                  <span className="check">✓</span> Drinking-optional tone (fun without pressure)
+                  <span className="check">✓</span> Drinking-optional tone (fun
+                  without pressure)
                 </li>
               </ul>
             </div>
@@ -1130,30 +1247,33 @@ export default function LandingPage() {
             <details>
               <summary>Do players need to download anything?</summary>
               <div className="faqBody">
-                No. It’s web-based. Players open their link on their phone. Audio plays from the host dashboard.
+                No. It’s web-based. Players open their link on their phone.
+                Audio plays from the host dashboard.
               </div>
             </details>
 
             <details>
               <summary>Can we do SMS instead of email?</summary>
               <div className="faqBody">
-                Later. Ship email first. SMS adds compliance, deliverability issues, and paid messaging plumbing.
-                Email is enough to validate the flow.
+                Later. Ship email first. SMS adds compliance, deliverability
+                issues, and paid messaging plumbing. Email is enough to validate
+                the flow.
               </div>
             </details>
 
             <details>
               <summary>Why are intakes required before the story generates?</summary>
               <div className="faqBody">
-                Because the personalization is the product. If you generate early, late intakes won’t match the tone or suspicion map.
+                Because the personalization is the product. If you generate
+                early, late intakes won’t match the tone or suspicion map.
               </div>
             </details>
 
             <details>
               <summary>Is it awkward / cringe?</summary>
               <div className="faqBody">
-                It doesn’t have to be. Keep the writing sharp and controlled: observational, not fanfiction.
-                The boundary section helps.
+                It doesn’t have to be. Keep the writing sharp and controlled:
+                observational, not fanfiction. The boundary section helps.
               </div>
             </details>
           </div>
@@ -1187,7 +1307,7 @@ export default function LandingPage() {
                 goToId("host");
               }}
             >
-              Host login
+              Host access
             </a>
           </div>
         </div>
