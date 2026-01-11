@@ -38,6 +38,180 @@ function fmtTime(sec: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Cinematic, theme-matching audio controls (B)
+ * - Play/Pause
+ * - Restart
+ * - -10s / +10s
+ * - Progress bar (click-to-seek)
+ * - Timecode
+ */
+function AudioConsole(props: {
+  title: string;
+  subtitle?: string;
+  src?: string | null;
+  hintRight?: string;
+  compact?: boolean;
+}) {
+  const { title, subtitle, src, hintRight, compact } = props;
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0); // 0..1
+  const [time, setTime] = useState({ current: 0, duration: 0 });
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // when src changes (e.g., round switch), reset UI
+    setPlaying(false);
+    setProgress(0);
+    setTime({ current: 0, duration: 0 });
+    setReady(false);
+
+    const el = audioRef.current;
+    if (!el) return;
+    try {
+      el.pause();
+      el.currentTime = 0;
+    } catch {
+      // ignore
+    }
+  }, [src]);
+
+  function syncFromEl(el: HTMLAudioElement) {
+    const d = el.duration || 0;
+    const c = el.currentTime || 0;
+    setTime({ current: c, duration: d });
+    setProgress(d > 0 ? c / d : 0);
+  }
+
+  function toggle() {
+    const el = audioRef.current;
+    if (!el || !src) return;
+    if (el.paused) el.play();
+    else el.pause();
+  }
+
+  function restart() {
+    const el = audioRef.current;
+    if (!el || !src) return;
+    try {
+      el.currentTime = 0;
+      el.play();
+    } catch {
+      // ignore
+    }
+  }
+
+  function jump(delta: number) {
+    const el = audioRef.current;
+    if (!el || !src) return;
+    const d = el.duration || 0;
+    const next = Math.max(0, Math.min(d || Number.MAX_SAFE_INTEGER, (el.currentTime || 0) + delta));
+    el.currentTime = next;
+    syncFromEl(el);
+  }
+
+  function seekFromClick(e: React.MouseEvent<HTMLDivElement>) {
+    const el = audioRef.current;
+    if (!el || !src) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const pct = rect.width > 0 ? x / rect.width : 0;
+    const d = el.duration || 0;
+    if (!d) return;
+
+    el.currentTime = Math.max(0, Math.min(d, d * pct));
+    syncFromEl(el);
+  }
+
+  const disabled = !src;
+
+  return (
+    <div className={`acWrap ${compact ? "acCompact" : ""} ${disabled ? "acDisabled" : ""}`}>
+      <div className="acTop">
+        <div className="acLeft">
+          <div className="acTitleRow">
+            <span className={`acLive ${playing ? "acLiveOn" : ""}`}>
+              <span className="acDot" />
+              LIVE
+            </span>
+            <div className="acTitle">{title}</div>
+          </div>
+          {subtitle ? <div className="acSub">{subtitle}</div> : null}
+        </div>
+
+        {hintRight ? <div className="acHint">{hintRight}</div> : null}
+      </div>
+
+      <audio
+        ref={audioRef}
+        src={src ?? undefined}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        onLoadedMetadata={(e) => {
+          setReady(true);
+          syncFromEl(e.currentTarget);
+        }}
+        onTimeUpdate={(e) => syncFromEl(e.currentTarget)}
+        style={{ display: "none" }}
+      />
+
+      <div className="acControls">
+        <button
+          className="deadair-btn deadair-btnPrimary"
+          onClick={toggle}
+          disabled={disabled}
+          title={disabled ? "No audio URL stored yet" : playing ? "Pause narration" : "Play narration"}
+        >
+          {playing ? "Pause" : "Play"}
+        </button>
+
+        <button
+          className="deadair-btn deadair-btnGhost"
+          onClick={() => jump(-10)}
+          disabled={disabled || !ready}
+          title="Replay 10 seconds"
+        >
+          ↺ 10s
+        </button>
+
+        <button
+          className="deadair-btn deadair-btnGhost"
+          onClick={() => jump(10)}
+          disabled={disabled || !ready}
+          title="Skip ahead 10 seconds"
+        >
+          10s ↻
+        </button>
+
+        <button
+          className="deadair-btn deadair-btnGhost"
+          onClick={restart}
+          disabled={disabled}
+          title="Restart narration"
+        >
+          Restart
+        </button>
+      </div>
+
+      <div className="acBarWrap" onClick={seekFromClick} role="button" aria-label="Seek narration">
+        <div className="acBarOuter">
+          <div className="acBarInner" style={{ width: `${Math.round(progress * 100)}%` }} />
+        </div>
+      </div>
+
+      <div className="acTimeRow">
+        <span>{fmtTime(time.current)}</span>
+        <span>{fmtTime(time.duration)}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Host() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -63,9 +237,8 @@ export default function Host() {
   // Round start confirm modal
   const [confirmRound, setConfirmRound] = useState<number | null>(null);
 
-  // Links dropdown
-  const [linksOpen, setLinksOpen] = useState(false);
-  const linksMenuRef = useRef<HTMLDivElement | null>(null);
+  // Narration text toggle (hidden by default)
+  const [showNarrationText, setShowNarrationText] = useState(false);
 
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "http://localhost:3000";
@@ -104,6 +277,11 @@ export default function Host() {
   const stepProcessingActive = allIntakesComplete && !storyReady;
   const stepReadyActive = storyReady;
 
+  // Reset narration text toggle when round changes (reduces clutter)
+  useEffect(() => {
+    setShowNarrationText(false);
+  }, [currentRound]);
+
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 1400);
@@ -138,25 +316,6 @@ export default function Host() {
     showToast("Briefing marked complete");
   }
 
-  // close links dropdown on outside click / ESC
-  useEffect(() => {
-    function onDocMouseDown(e: MouseEvent) {
-      if (!linksOpen) return;
-      const t = e.target as Node;
-      if (!linksMenuRef.current) return;
-      if (!linksMenuRef.current.contains(t)) setLinksOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setLinksOpen(false);
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocMouseDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [linksOpen]);
-
   async function load() {
     if (!gameId) return;
     setLoading(true);
@@ -182,9 +341,7 @@ export default function Host() {
       setPlayers([]);
       setRounds([]);
       setLoading(false);
-      setErrorMsg(
-        "Wrong or missing host PIN. Use the host link that includes ?pin=..."
-      );
+      setErrorMsg("Wrong or missing host PIN. Use the host link that includes ?pin=...");
       return;
     }
 
@@ -211,9 +368,7 @@ export default function Host() {
 
     const { data: rs, error: rErr } = await supabase
       .from("rounds")
-      .select(
-        "round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b"
-      )
+      .select("round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b")
       .eq("game_id", gameId)
       .order("round_number");
 
@@ -245,10 +400,7 @@ export default function Host() {
       return;
     }
 
-    const { error } = await supabase
-      .from("games")
-      .update({ current_round: nextRound })
-      .eq("id", gameId);
+    const { error } = await supabase.from("games").update({ current_round: nextRound }).eq("id", gameId);
     if (error) alert(error.message);
     await load();
   }
@@ -272,26 +424,6 @@ export default function Host() {
 
   function openHostIntake() {
     router.push(`/intake/host/${gameId}?pin=${encodeURIComponent(pin)}`);
-  }
-
-  async function copyAllIntakeLinks() {
-    const lines = sortedPlayers.map((p) => `${p.name}: ${playerIntakeLink(p.code)}`);
-    await copyToClipboard(lines.join("\n"), "Copied all intake links");
-  }
-
-  async function copyAllJoinLinks() {
-    const lines = sortedPlayers.map((p) => `${p.name}: ${playerJoinLink(p.code)}`);
-    await copyToClipboard(lines.join("\n"), "Copied all join links");
-  }
-
-  async function copyAllLinksBoth() {
-    const lines = sortedPlayers.map(
-      (p) =>
-        `${p.name}\nIntake: ${playerIntakeLink(p.code)}\nJoin:   ${playerJoinLink(
-          p.code
-        )}\n`
-    );
-    await copyToClipboard(lines.join("\n"), "Copied all links");
   }
 
   function roundButtonLabel(r: number) {
@@ -321,12 +453,9 @@ export default function Host() {
             <h2 className="deadair-title" style={{ fontSize: 22 }}>
               Host access blocked
             </h2>
+            <p className="deadair-sub">{errorMsg ?? "Game not found or you don’t have access."}</p>
             <p className="deadair-sub">
-              {errorMsg ?? "Game not found or you don’t have access."}
-            </p>
-            <p className="deadair-sub">
-              Make sure you’re using the host link that includes{" "}
-              <code>?pin=...</code>.
+              Make sure you’re using the host link that includes <code>?pin=...</code>.
             </p>
           </div>
         </div>
@@ -342,15 +471,14 @@ export default function Host() {
           max-width: 1100px;
         }
         :global(.deadair-btn) {
-          min-height: 44px; /* tap target */
+          min-height: 44px;
         }
         :global(.deadair-btnPrimary),
         :global(.deadair-btnGhost),
         :global(.deadair-btnDisabled) {
-          min-height: 44px; /* ensure variants too */
+          min-height: 44px;
         }
 
-        /* layout helpers */
         .row {
           display: flex;
           justify-content: space-between;
@@ -361,12 +489,7 @@ export default function Host() {
         }
         .hr {
           height: 1px;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255, 255, 255, 0.12),
-            transparent
-          );
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
           margin: 14px 0;
         }
         .btnRow {
@@ -385,7 +508,7 @@ export default function Host() {
         }
         .mono {
           font-family: var(--mono);
-          overflow-wrap: anywhere; /* ✅ avoid overflow on long ids/codes */
+          overflow-wrap: anywhere;
           word-break: break-word;
         }
         .small {
@@ -396,7 +519,7 @@ export default function Host() {
           line-height: 1.4;
         }
 
-        /* top-right status rail */
+        /* header status rail */
         .headerStatus {
           display: flex;
           flex-direction: column;
@@ -422,7 +545,6 @@ export default function Host() {
           font-size: 12px;
         }
 
-        /* badges */
         .badge {
           display: inline-flex;
           align-items: center;
@@ -437,14 +559,10 @@ export default function Host() {
           white-space: nowrap;
         }
 
-        /* briefing console */
+        /* briefing console (setup) */
         .briefingWrap {
           border: 1px solid rgba(210, 180, 140, 0.26);
-          background: linear-gradient(
-            180deg,
-            rgba(210, 180, 140, 0.14),
-            rgba(0, 0, 0, 0.14)
-          );
+          background: linear-gradient(180deg, rgba(210, 180, 140, 0.14), rgba(0, 0, 0, 0.14));
           border-radius: 16px;
           padding: 12px;
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -533,7 +651,7 @@ export default function Host() {
           border-radius: 14px;
         }
 
-        /* player list */
+        /* players */
         ul {
           margin: 0;
           padding: 0;
@@ -579,45 +697,43 @@ export default function Host() {
           color: rgba(255, 255, 255, 0.86);
         }
 
-        /* links dropdown */
-        .menuWrap {
-          position: relative;
-          display: inline-flex;
+        /* accordion (Players in rounds 1-4) */
+        details.acc {
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(0, 0, 0, 0.18);
+          padding: 10px 12px;
         }
-        .menu {
-          position: absolute;
-          right: 0;
-          top: calc(100% + 8px);
-          width: 240px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          background: rgba(14, 16, 20, 0.96);
-          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
-          padding: 6px;
-          z-index: 40;
-          backdrop-filter: blur(10px);
-        }
-        .menuItem {
-          width: 100%;
-          text-align: left;
-          border: 0;
-          background: transparent;
-          color: rgba(255, 255, 255, 0.9);
-          padding: 10px 10px;
-          border-radius: 10px;
+        summary.accSummary {
           cursor: pointer;
+          list-style: none;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          min-height: 44px;
           font-family: var(--sans);
-          font-size: 13px;
-          min-height: 44px; /* tap target */
+          color: rgba(255, 255, 255, 0.92);
+          font-weight: 900;
         }
-        .menuItem:hover {
-          background: rgba(255, 255, 255, 0.06);
+        summary.accSummary::-webkit-details-marker {
+          display: none;
         }
-        .menuHint {
-          padding: 8px 10px;
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.55);
-          font-family: var(--sans);
+        .accMeta {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 700;
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.7);
+          white-space: nowrap;
+        }
+        .chev {
+          opacity: 0.75;
+          font-family: var(--mono);
+        }
+        .accBody {
+          margin-top: 10px;
         }
 
         /* modal */
@@ -681,13 +797,146 @@ export default function Host() {
           z-index: 60;
         }
 
-        /* ✅ MOBILE (single breakpoint per your rule) */
+        /* ✅ Cinematic Audio Console (Rounds 1–4) */
+        .acWrap {
+          border-radius: 16px;
+          padding: 12px;
+          border: 1px solid rgba(212, 175, 55, 0.22);
+          background: linear-gradient(
+            180deg,
+            rgba(212, 175, 55, 0.10),
+            rgba(0, 0, 0, 0.18)
+          );
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 55px rgba(0, 0, 0, 0.45);
+        }
+        .acCompact {
+          padding: 10px;
+        }
+        .acDisabled {
+          opacity: 0.7;
+        }
+        .acTop {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .acTitleRow {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .acTitle {
+          font-family: var(--sans);
+          font-weight: 900;
+          color: rgba(255, 255, 255, 0.92);
+          letter-spacing: 0.2px;
+          font-size: 14px;
+        }
+        .acSub {
+          margin-top: 6px;
+          color: rgba(255, 255, 255, 0.70);
+          font-family: var(--sans);
+          font-size: 12px;
+          line-height: 1.35;
+          max-width: 70ch;
+        }
+        .acHint {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-family: var(--mono);
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.74);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.18);
+          padding: 6px 10px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .acLive {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-family: var(--mono);
+          font-size: 12px;
+          letter-spacing: 1.6px;
+          text-transform: uppercase;
+          color: rgba(212, 175, 55, 0.92);
+          border: 1px solid rgba(212, 175, 55, 0.26);
+          background: rgba(212, 175, 55, 0.10);
+          padding: 6px 10px;
+          border-radius: 999px;
+          user-select: none;
+        }
+        .acDot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: rgba(177, 29, 42, 0.92);
+          box-shadow: 0 0 0 3px rgba(177, 29, 42, 0.12);
+        }
+        .acLiveOn .acDot {
+          animation: pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+          0% {
+            transform: scale(1);
+            opacity: 0.85;
+          }
+          50% {
+            transform: scale(1.25);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 0.85;
+          }
+        }
+
+        .acControls {
+          margin-top: 10px;
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        .acBarWrap {
+          margin-top: 12px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .acBarOuter {
+          height: 12px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.10);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          overflow: hidden;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+        .acBarInner {
+          height: 100%;
+          width: 0%;
+          background: linear-gradient(90deg, rgba(177, 29, 42, 0.85), rgba(212, 175, 55, 0.35));
+        }
+        .acTimeRow {
+          margin-top: 8px;
+          display: flex;
+          justify-content: space-between;
+          font-family: var(--mono);
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.70);
+        }
+
+        /* ✅ MOBILE (single breakpoint) */
         @media (max-width: 900px) {
           .row {
             margin-bottom: 10px;
           }
 
-          /* header status becomes left-aligned, full-width (less cramped) */
           .headerStatus {
             width: 100%;
             align-items: flex-start;
@@ -710,7 +959,6 @@ export default function Host() {
             font-size: 13px;
           }
 
-          /* timeline pills stack nicely */
           .timelineRow {
             display: grid;
             grid-template-columns: 1fr;
@@ -721,7 +969,6 @@ export default function Host() {
             justify-content: space-between;
           }
 
-          /* round buttons: 2-col grid so it’s not a long wrap mess */
           .btnRow {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -732,7 +979,6 @@ export default function Host() {
             width: 100%;
           }
 
-          /* briefing controls: let small text breathe */
           .briefingTop {
             align-items: flex-start;
           }
@@ -741,12 +987,6 @@ export default function Host() {
             justify-content: center;
           }
 
-          /* narration card elements keep full width */
-          audio {
-            width: 100%;
-          }
-
-          /* player rows: stack + full-width action buttons */
           .playerItem {
             padding: 12px 0;
             gap: 10px;
@@ -758,34 +998,37 @@ export default function Host() {
           .playerNameRow {
             align-items: flex-start;
           }
-
-          /* per-player button row goes full-width, stacked */
           .playerItem .btnRow {
             grid-template-columns: 1fr;
           }
-
-          /* links dropdown button (top of Players card) goes full width */
-          .menuWrap {
-            width: 100%;
-          }
-          .menuWrap :global(.deadair-btn) {
-            width: 100%;
-          }
-          .menu {
-            width: min(92vw, 360px);
-            right: 0;
-          }
-
-          /* make the "Open player view" button full width for fat-finger safety */
           .playerNameRow :global(.deadair-btn) {
+            width: 100%;
+          }
+
+          summary.accSummary {
+            flex-wrap: wrap;
+            align-items: flex-start;
+          }
+          .accMeta {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .acControls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+          }
+          .acControls :global(.deadair-btn) {
             width: 100%;
           }
         }
 
-        /* extra tiny phones */
         @media (max-width: 420px) {
           .btnRow {
-            grid-template-columns: 1fr; /* round buttons become single column */
+            grid-template-columns: 1fr;
+          }
+          .acControls {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
@@ -796,17 +1039,15 @@ export default function Host() {
           <div>
             <h1 className="deadair-title">Dead Air</h1>
             <p className="deadair-sub" style={{ letterSpacing: "0.3px" }}>
-              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case
-              file: <span className="mono">{game.id}</span>
+              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case file:{" "}
+              <span className="mono">{game.id}</span>
             </p>
           </div>
 
-          {/* ✅ moved to top-right */}
           <div className="headerStatus">
             <div className="statusBadges">
               <span className="badge">
-                Phase:{" "}
-                <b>{currentRound === 0 ? "Setup" : `Round ${currentRound}`}</b>
+                Phase: <b>{currentRound === 0 ? "Setup" : `Round ${currentRound}`}</b>
               </span>
 
               <span className="badge">
@@ -819,12 +1060,11 @@ export default function Host() {
             </div>
 
             <div className="statusActions">
-              <button
-                className="deadair-btn deadair-btnPrimary"
-                onClick={openHostIntake}
-              >
-                Open Host Intake
-              </button>
+              {currentRound === 0 ? (
+                <button className="deadair-btn deadair-btnPrimary" onClick={openHostIntake}>
+                  Open Host Intake
+                </button>
+              ) : null}
 
               <button className="deadair-btn deadair-btnGhost" onClick={load}>
                 Refresh
@@ -833,259 +1073,228 @@ export default function Host() {
           </div>
         </div>
 
-        {/* Status */}
-        <div className="deadair-card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-              flexWrap: "wrap",
-              alignItems: "baseline",
-            }}
-          >
-            <h3
+        {/* Status (Setup only) */}
+        {currentRound === 0 ? (
+          <div className="deadair-card">
+            <div
               style={{
-                margin: 0,
-                fontFamily: "var(--sans)",
-                fontSize: 15,
-                letterSpacing: "0.2px",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "baseline",
               }}
             >
-              Status
-            </h3>
-            <div className="small">
-              If you know your guests well enough, you can fill their intakes
-              yourself. If not… they can do it. We’re flexible.
+              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>
+                Status
+              </h3>
+              <div className="small">
+                If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.
+              </div>
             </div>
-          </div>
 
-          {/* Timeline */}
-          <div className="timelineRow">
-            <span
-              className={`timelinePill ${
-                stepCollectActive ? "timelineActive" : ""
-              }`}
-            >
-              🧾 Collect Intakes{" "}
-              <span style={{ opacity: 0.8 }}>
-                ({intakeDone}/{totalPlayers})
+            <div className="timelineRow">
+              <span className={`timelinePill ${stepCollectActive ? "timelineActive" : ""}`}>
+                🧾 Collect Intakes{" "}
+                <span style={{ opacity: 0.8 }}>
+                  ({intakeDone}/{totalPlayers})
+                </span>
               </span>
-            </span>
-            <span
-              className={`timelinePill ${
-                stepProcessingActive ? "timelineActive" : ""
-              }`}
-            >
-              🕯️ Processing <span style={{ opacity: 0.8 }}>(24–48 hrs)</span>
-            </span>
-            <span
-              className={`timelinePill ${stepReadyActive ? "timelineActive" : ""}`}
-            >
-              🩸 Ready to Play
-            </span>
-          </div>
+              <span className={`timelinePill ${stepProcessingActive ? "timelineActive" : ""}`}>
+                🕯️ Processing <span style={{ opacity: 0.8 }}>(24–48 hrs)</span>
+              </span>
+              <span className={`timelinePill ${stepReadyActive ? "timelineActive" : ""}`}>🩸 Ready to Play</span>
+            </div>
 
-          {/* Host Briefing (Setup only) */}
-          {currentRound === 0 && (
-            <>
-              <div style={{ marginTop: 12 }}>
-                <div className="briefingWrap">
-                  <div className="briefingTop">
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <span className="deadair-chip">🎧 Host Briefing</span>
-                      <span className="deadair-sub" style={{ margin: 0 }}>
-                        Listen first — it prevents “why is nothing working”
-                        energy.
-                      </span>
-                    </div>
-                    <span className="hintPill">
-                      {briefingListened ? "✅ listened" : "📌 play me first"}
+            {/* Host Briefing (Setup only) */}
+            <div style={{ marginTop: 12 }}>
+              <div className="briefingWrap">
+                <div className="briefingTop">
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <span className="deadair-chip">🎧 Host Briefing</span>
+                    <span className="deadair-sub" style={{ margin: 0 }}>
+                      Listen first — it prevents “why is nothing working” energy.
                     </span>
                   </div>
+                  <span className="hintPill">{briefingListened ? "✅ listened" : "📌 play me first"}</span>
+                </div>
 
-                  <audio
-                    ref={briefingRef}
-                    src={WELCOME_AUDIO_URL}
-                    preload="metadata"
-                    onPlay={() => setBriefingPlaying(true)}
-                    onPause={() => setBriefingPlaying(false)}
-                    onEnded={() => {
-                      setBriefingPlaying(false);
-                      markBriefingListened();
+                <audio
+                  ref={briefingRef}
+                  src={WELCOME_AUDIO_URL}
+                  preload="metadata"
+                  onPlay={() => setBriefingPlaying(true)}
+                  onPause={() => setBriefingPlaying(false)}
+                  onEnded={() => {
+                    setBriefingPlaying(false);
+                    markBriefingListened();
+                  }}
+                  onTimeUpdate={(e) => {
+                    const el = e.currentTarget;
+                    const d = el.duration || 0;
+                    const c = el.currentTime || 0;
+                    setBriefingTime({ current: c, duration: d });
+                    setBriefingProgress(d > 0 ? c / d : 0);
+                  }}
+                  style={{ display: "none" }}
+                />
+
+                <div className="btnRow">
+                  <button
+                    className="deadair-btn deadair-btnPrimary"
+                    onClick={() => {
+                      const el = briefingRef.current;
+                      if (!el) return;
+                      if (el.paused) el.play();
+                      else el.pause();
                     }}
-                    onTimeUpdate={(e) => {
-                      const el = e.currentTarget;
-                      const d = el.duration || 0;
-                      const c = el.currentTime || 0;
-                      setBriefingTime({ current: c, duration: d });
-                      setBriefingProgress(d > 0 ? c / d : 0);
+                  >
+                    {briefingPlaying ? "Pause briefing" : "Play briefing"}
+                  </button>
+
+                  <button
+                    className="deadair-btn deadair-btnGhost"
+                    onClick={() => {
+                      const el = briefingRef.current;
+                      if (!el) return;
+                      el.currentTime = 0;
+                      el.pause();
                     }}
-                    style={{ display: "none" }}
-                  />
+                  >
+                    Restart
+                  </button>
 
-                  <div className="btnRow">
+                  {!briefingListened && (
                     <button
-                      className="deadair-btn deadair-btnPrimary"
-                      onClick={() => {
-                        const el = briefingRef.current;
-                        if (!el) return;
-                        if (el.paused) el.play();
-                        else el.pause();
-                      }}
+                      className="deadair-btn"
+                      style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }}
+                      onClick={markBriefingListened}
                     >
-                      {briefingPlaying ? "Pause briefing" : "Play briefing"}
+                      Mark listened
                     </button>
+                  )}
 
-                    <button
-                      className="deadair-btn deadair-btnGhost"
-                      onClick={() => {
-                        const el = briefingRef.current;
-                        if (!el) return;
-                        el.currentTime = 0;
-                        el.pause();
-                      }}
-                    >
-                      Restart
-                    </button>
+                  <span className="small" style={{ marginTop: 0 }}>
+                    Finish intakes → we process (24–48 hrs) → email when ready → access for 6 months.
+                  </span>
+                </div>
 
-                    {!briefingListened && (
-                      <button
-                        className="deadair-btn"
-                        style={{
-                          borderColor: "rgba(212,175,55,0.30)",
-                          background: "rgba(212,175,55,0.12)",
-                        }}
-                        onClick={markBriefingListened}
-                      >
-                        Mark listened
-                      </button>
-                    )}
+                <div className="progressOuter">
+                  <div className="progressInner" style={{ width: `${Math.round(briefingProgress * 100)}%` }} />
+                </div>
 
-                    <span className="small" style={{ marginTop: 0 }}>
-                      Finish intakes → we process (24–48 hrs) → email when ready
-                      → access for 6 months.
-                    </span>
-                  </div>
-
-                  <div className="progressOuter">
-                    <div
-                      className="progressInner"
-                      style={{
-                        width: `${Math.round(briefingProgress * 100)}%`,
-                      }}
-                    />
-                  </div>
-
-                  <div className="timeRow">
-                    <span>{fmtTime(briefingTime.current)}</span>
-                    <span>{fmtTime(briefingTime.duration)}</span>
-                  </div>
+                <div className="timeRow">
+                  <span>{fmtTime(briefingTime.current)}</span>
+                  <span>{fmtTime(briefingTime.duration)}</span>
                 </div>
               </div>
+            </div>
 
-              <div className="hr" />
-            </>
-          )}
+            <div className="hr" />
 
-          {!allIntakesComplete ? (
-            <p className="deadair-sub" style={{ marginTop: 10 }}>
-              Waiting on intake forms: <b>{intakeDone}</b> / <b>{totalPlayers}</b>{" "}
-              complete.
-              <br />
-              Send players their links below, or fill them yourself using{" "}
-              <b>Open Host Intake</b>.
-            </p>
-          ) : !storyReady ? (
-            <p className="deadair-sub" style={{ marginTop: 10 }}>
-              All intake forms are complete.
-              <br />
-              We’ve been notified and will begin processing your case. Please
-              allow <b>24–48 hours</b>.
-              <br />
-              You’ll receive an email when it’s ready. (No, you can’t “just
-              peek” at the ending.)
-            </p>
-          ) : (
-            <p className="deadair-sub" style={{ marginTop: 10 }}>
-              Story is ready. You can start Round 1 whenever you want.
-            </p>
-          )}
+            {!allIntakesComplete ? (
+              <p className="deadair-sub" style={{ marginTop: 10 }}>
+                Waiting on intake forms: <b>{intakeDone}</b> / <b>{totalPlayers}</b> complete.
+                <br />
+                Send players their links below, or fill them yourself using <b>Open Host Intake</b>.
+              </p>
+            ) : !storyReady ? (
+              <p className="deadair-sub" style={{ marginTop: 10 }}>
+                All intake forms are complete.
+                <br />
+                We’ve been notified and will begin processing your case. Please allow <b>24–48 hours</b>.
+                <br />
+                You’ll receive an email when it’s ready. (No, you can’t “just peek” at the ending.)
+              </p>
+            ) : (
+              <p className="deadair-sub" style={{ marginTop: 10 }}>
+                Story is ready. You can start Round 1 whenever you want.
+              </p>
+            )}
 
-          <div className="hr" />
+            <div className="hr" />
 
-          <div className="btnRow">
-            {roundsToShow.map((r) => {
-              const isCurrent = r === currentRound;
-              const disabled = r > 0 && !storyReady;
+            <div className="btnRow">
+              {roundsToShow.map((r) => {
+                const isCurrent = r === currentRound;
+                const disabled = r > 0 && !storyReady;
 
-              return (
-                <button
-                  key={r}
-                  onClick={() => requestStartRound(r)}
-                  disabled={disabled}
-                  className={[
-                    "deadair-btn",
-                    isCurrent ? "deadair-btnPrimary" : "",
-                    disabled ? "deadair-btnDisabled" : "",
-                  ].join(" ")}
-                  title={roundButtonTitle(r)}
-                >
-                  {roundButtonLabel(r)}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={r}
+                    onClick={() => requestStartRound(r)}
+                    disabled={disabled}
+                    className={[
+                      "deadair-btn",
+                      isCurrent ? "deadair-btnPrimary" : "",
+                      disabled ? "deadair-btnDisabled" : "",
+                    ].join(" ")}
+                    title={roundButtonTitle(r)}
+                  >
+                    {roundButtonLabel(r)}
+                  </button>
+                );
+              })}
+            </div>
+
+            {!storyReady && (
+              <p className="small" style={{ marginTop: 10 }}>
+                Rounds 1–4 unlock once your case is ready.
+              </p>
+            )}
           </div>
+        ) : (
+          /* During rounds 1–4, keep round controls (but skip the big status block) */
+          <div className="deadair-card">
+            <div className="btnRow" style={{ marginTop: 0 }}>
+              {roundsToShow.map((r) => {
+                const isCurrent = r === currentRound;
+                const disabled = r > 0 && !storyReady;
 
-          {!storyReady && (
-            <p className="small" style={{ marginTop: 10 }}>
-              Rounds 1–4 unlock once your case is ready.
-            </p>
-          )}
-        </div>
+                return (
+                  <button
+                    key={r}
+                    onClick={() => requestStartRound(r)}
+                    disabled={disabled}
+                    className={[
+                      "deadair-btn",
+                      isCurrent ? "deadair-btnPrimary" : "",
+                      disabled ? "deadair-btnDisabled" : "",
+                    ].join(" ")}
+                    title={roundButtonTitle(r)}
+                  >
+                    {roundButtonLabel(r)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Narration */}
         <h3 className="sectionTitle">Narration for Current Phase</h3>
         <div className="deadair-card">
           {currentRound === 0 ? (
-            <p className="deadair-sub">
-              Setup mode. Start Round 1 when your case is ready.
-            </p>
+            <p className="deadair-sub">Setup mode. Start Round 1 when your case is ready.</p>
           ) : (
             <>
               {currentRoundRow?.narration_audio_url ? (
                 <>
-                  <div
-                    className="badge"
-                    style={{ display: "inline-flex", marginBottom: 10 }}
-                  >
-                    <span className="deadair-dot" />
-                    Audio ready
-                  </div>
-
-                  <audio
-                    controls
-                    src={currentRoundRow.narration_audio_url ?? undefined}
-                    style={{ width: "100%" }}
+                  <AudioConsole
+                    title={`Round ${currentRound} Narration`}
+                    subtitle={currentRoundRow?.title ?? undefined}
+                    src={currentRoundRow.narration_audio_url}
+                    hintRight={currentRound === 4 ? "Part A" : undefined}
                   />
 
-                  {currentRound === 4 &&
-                  currentRoundRow?.narration_audio_url_part_b ? (
+                  {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
                     <div style={{ marginTop: 12 }}>
-                      <div className="deadair-chip" style={{ marginBottom: 8 }}>
-                        Reveal — Part B (play after accusations)
-                      </div>
-                      <audio
-                        controls
-                        src={currentRoundRow.narration_audio_url_part_b ?? undefined}
-                        style={{ width: "100%" }}
+                      <AudioConsole
+                        title="Reveal — Part B"
+                        subtitle="Play after final accusations."
+                        src={currentRoundRow.narration_audio_url_part_b}
+                        hintRight="Part B"
+                        compact
                       />
                     </div>
                   ) : null}
@@ -1096,163 +1305,185 @@ export default function Host() {
 
               <div className="hr" />
 
-              <div className="small" style={{ marginTop: 0 }}>
-                Narration text (reference)
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div className="small" style={{ marginTop: 0 }}>
+                  Narration text (reference)
+                </div>
+
+                <button
+                  className="deadair-btn deadair-btnGhost"
+                  onClick={() => setShowNarrationText((v) => !v)}
+                  aria-expanded={showNarrationText}
+                >
+                  {showNarrationText ? "Hide text" : "Show text"}
+                </button>
               </div>
-              <div className="preBox" style={{ marginTop: 10 }}>
-                <pre>{currentRoundRow?.narration_text ?? "(No narration stored yet)"}</pre>
-              </div>
+
+              {showNarrationText ? (
+                <div className="preBox" style={{ marginTop: 10 }}>
+                  <pre>{currentRoundRow?.narration_text ?? "(No narration stored yet)"}</pre>
+                </div>
+              ) : null}
             </>
           )}
         </div>
 
         {/* Players */}
         <h3 className="sectionTitle">Players</h3>
-        <div className="deadair-card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <div className="small">
-              Pending players float to the top. (This is not a judgment. Mostly.)
-            </div>
 
-            {/* ✅ dropdown replaces multiple copy buttons */}
-            <div className="btnRow" style={{ marginTop: 0 }}>
-              <div className="menuWrap" ref={linksMenuRef}>
-                <button
-                  className="deadair-btn deadair-btnGhost"
-                  onClick={() => setLinksOpen((v) => !v)}
-                  aria-haspopup="menu"
-                  aria-expanded={linksOpen}
-                >
-                  Links ▾
-                </button>
+        {currentRound === 0 ? (
+          <div className="deadair-card">
+            <ul>
+              {sortedPlayers.map((p) => (
+                <li key={p.id} className="playerItem">
+                  <div className="playerLeft">
+                    <div className="playerNameRow">
+                      <b>{p.name}</b>
 
-                {linksOpen && (
-                  <div className="menu" role="menu">
-                    <button
-                      className="menuItem"
-                      role="menuitem"
-                      onClick={async () => {
-                        setLinksOpen(false);
-                        await copyAllIntakeLinks();
-                      }}
-                    >
-                      Copy all intake links
-                    </button>
-                    <button
-                      className="menuItem"
-                      role="menuitem"
-                      onClick={async () => {
-                        setLinksOpen(false);
-                        await copyAllJoinLinks();
-                      }}
-                    >
-                      Copy all join links
-                    </button>
-                    <button
-                      className="menuItem"
-                      role="menuitem"
-                      onClick={async () => {
-                        setLinksOpen(false);
-                        await copyAllLinksBoth();
-                      }}
-                    >
-                      Copy all (intake + join)
-                    </button>
+                      <span className="pill">
+                        code: <span className="mono">{p.code}</span>
+                      </span>
 
-                    <div className="menuHint">Tip: paste into iMessage / group chat / email.</div>
+                      <span className="pill pillPrivate">
+                        intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
+                      </span>
+
+                      <button
+                        className="deadair-btn deadair-btnGhost"
+                        style={{ padding: "8px 10px" }}
+                        onClick={() => router.push(`/p/${p.code}`)}
+                        title="Open the player page"
+                      >
+                        👤 Open player view
+                      </button>
+                    </div>
+
+                    {(p.invite_email || p.invite_phone) && (
+                      <div className="small">
+                        Invite:{" "}
+                        <span className="mono">
+                          {p.invite_email ?? ""}
+                          {p.invite_email && p.invite_phone ? " • " : ""}
+                          {p.invite_phone ?? ""}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
 
-          <div className="hr" />
-
-          <ul>
-            {sortedPlayers.map((p) => (
-              <li key={p.id} className="playerItem">
-                <div className="playerLeft">
-                  <div className="playerNameRow">
-                    <b>{p.name}</b>
-
-                    <span className="pill">
-                      code: <span className="mono">{p.code}</span>
-                    </span>
-
-                    <span className={`pill pillPrivate`}>
-                      intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
-                    </span>
-
+                  <div className="btnRow">
                     <button
                       className="deadair-btn deadair-btnGhost"
-                      style={{ padding: "8px 10px" }}
-                      onClick={() => router.push(`/p/${p.code}`)}
-                      title="Open the player page"
+                      onClick={() =>
+                        copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)
+                      }
                     >
-                      👤 Open player view
+                      Copy intake link
+                    </button>
+
+                    <button
+                      className="deadair-btn deadair-btnPrimary"
+                      onClick={() =>
+                        copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)
+                      }
+                    >
+                      Copy join link
                     </button>
                   </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <details className="acc">
+            <summary className="accSummary">
+              <span>Players</span>
+              <span className="accMeta">
+                <span>
+                  Intake <b>{intakeDone}</b>/<b>{totalPlayers}</b>
+                </span>
+                <span className="chev">▾</span>
+              </span>
+            </summary>
 
-                  {(p.invite_email || p.invite_phone) && (
-                    <div className="small">
-                      Invite:{" "}
-                      <span className="mono">
-                        {p.invite_email ?? ""}
-                        {p.invite_email && p.invite_phone ? " • " : ""}
-                        {p.invite_phone ?? ""}
-                      </span>
-                    </div>
-                  )}
-                </div>
+            <div className="accBody">
+              <div className="deadair-card" style={{ marginTop: 0 }}>
+                <ul>
+                  {sortedPlayers.map((p) => (
+                    <li key={p.id} className="playerItem">
+                      <div className="playerLeft">
+                        <div className="playerNameRow">
+                          <b>{p.name}</b>
 
-                <div className="btnRow">
-                  <button
-                    className="deadair-btn deadair-btnGhost"
-                    onClick={() =>
-                      copyToClipboard(
-                        playerIntakeLink(p.code),
-                        `Copied ${p.name}'s intake link`
-                      )
-                    }
-                  >
-                    Copy intake link
-                  </button>
+                          <span className="pill">
+                            code: <span className="mono">{p.code}</span>
+                          </span>
 
-                  <button
-                    className="deadair-btn deadair-btnPrimary"
-                    onClick={() =>
-                      copyToClipboard(
-                        playerJoinLink(p.code),
-                        `Copied ${p.name}'s join link`
-                      )
-                    }
-                  >
-                    Copy join link
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+                          <span className="pill pillPrivate">
+                            intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
+                          </span>
+
+                          <button
+                            className="deadair-btn deadair-btnGhost"
+                            style={{ padding: "8px 10px" }}
+                            onClick={() => router.push(`/p/${p.code}`)}
+                            title="Open the player page"
+                          >
+                            👤 Open player view
+                          </button>
+                        </div>
+
+                        {(p.invite_email || p.invite_phone) && (
+                          <div className="small">
+                            Invite:{" "}
+                            <span className="mono">
+                              {p.invite_email ?? ""}
+                              {p.invite_email && p.invite_phone ? " • " : ""}
+                              {p.invite_phone ?? ""}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="btnRow">
+                        <button
+                          className="deadair-btn deadair-btnGhost"
+                          onClick={() =>
+                            copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)
+                          }
+                        >
+                          Copy intake link
+                        </button>
+
+                        <button
+                          className="deadair-btn deadair-btnPrimary"
+                          onClick={() =>
+                            copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)
+                          }
+                        >
+                          Copy join link
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </details>
+        )}
 
         {toast && <div className="toast">{toast}</div>}
 
         {/* Confirm modal */}
         {confirmRound !== null && (
-          <div
-            className="modalOverlay"
-            onClick={() => setConfirmRound(null)}
-            role="dialog"
-            aria-modal="true"
-          >
+          <div className="modalOverlay" onClick={() => setConfirmRound(null)} role="dialog" aria-modal="true">
             <div className="modalCard" onClick={(e) => e.stopPropagation()}>
               <h4 className="modalTitle">Start Round {confirmRound}?</h4>
               <p className="modalBody">
@@ -1262,10 +1493,7 @@ export default function Host() {
               </p>
 
               <div className="modalBtnRow">
-                <button
-                  className="deadair-btn deadair-btnGhost"
-                  onClick={() => setConfirmRound(null)}
-                >
+                <button className="deadair-btn deadair-btnGhost" onClick={() => setConfirmRound(null)}>
                   Cancel
                 </button>
 
