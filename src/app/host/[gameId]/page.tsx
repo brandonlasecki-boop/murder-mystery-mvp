@@ -182,7 +182,9 @@ export default function Host() {
       setPlayers([]);
       setRounds([]);
       setLoading(false);
-      setErrorMsg("Wrong or missing host PIN. Use the host link that includes ?pin=...");
+      setErrorMsg(
+        "Wrong or missing host PIN. Use the host link that includes ?pin=..."
+      );
       return;
     }
 
@@ -209,7 +211,9 @@ export default function Host() {
 
     const { data: rs, error: rErr } = await supabase
       .from("rounds")
-      .select("round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b")
+      .select(
+        "round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b"
+      )
       .eq("game_id", gameId)
       .order("round_number");
 
@@ -241,7 +245,10 @@ export default function Host() {
       return;
     }
 
-    const { error } = await supabase.from("games").update({ current_round: nextRound }).eq("id", gameId);
+    const { error } = await supabase
+      .from("games")
+      .update({ current_round: nextRound })
+      .eq("id", gameId);
     if (error) alert(error.message);
     await load();
   }
@@ -278,7 +285,12 @@ export default function Host() {
   }
 
   async function copyAllLinksBoth() {
-    const lines = sortedPlayers.map((p) => `${p.name}\nIntake: ${playerIntakeLink(p.code)}\nJoin:   ${playerJoinLink(p.code)}\n`);
+    const lines = sortedPlayers.map(
+      (p) =>
+        `${p.name}\nIntake: ${playerIntakeLink(p.code)}\nJoin:   ${playerJoinLink(
+          p.code
+        )}\n`
+    );
     await copyToClipboard(lines.join("\n"), "Copied all links");
   }
 
@@ -309,9 +321,12 @@ export default function Host() {
             <h2 className="deadair-title" style={{ fontSize: 22 }}>
               Host access blocked
             </h2>
-            <p className="deadair-sub">{errorMsg ?? "Game not found or you don’t have access."}</p>
             <p className="deadair-sub">
-              Make sure you’re using the host link that includes <code>?pin=...</code>.
+              {errorMsg ?? "Game not found or you don’t have access."}
+            </p>
+            <p className="deadair-sub">
+              Make sure you’re using the host link that includes{" "}
+              <code>?pin=...</code>.
             </p>
           </div>
         </div>
@@ -322,6 +337,19 @@ export default function Host() {
   return (
     <main className="deadair-page">
       <style jsx>{`
+        /* ✅ mobile-friendly base */
+        :global(.deadair-wrap) {
+          max-width: 1100px;
+        }
+        :global(.deadair-btn) {
+          min-height: 44px; /* tap target */
+        }
+        :global(.deadair-btnPrimary),
+        :global(.deadair-btnGhost),
+        :global(.deadair-btnDisabled) {
+          min-height: 44px; /* ensure variants too */
+        }
+
         /* layout helpers */
         .row {
           display: flex;
@@ -333,7 +361,12 @@ export default function Host() {
         }
         .hr {
           height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.12),
+            transparent
+          );
           margin: 14px 0;
         }
         .btnRow {
@@ -352,6 +385,8 @@ export default function Host() {
         }
         .mono {
           font-family: var(--mono);
+          overflow-wrap: anywhere; /* ✅ avoid overflow on long ids/codes */
+          word-break: break-word;
         }
         .small {
           color: var(--dim);
@@ -368,6 +403,7 @@ export default function Host() {
           gap: 8px;
           align-items: flex-end;
           text-align: right;
+          max-width: 520px;
         }
         .statusBadges {
           display: flex;
@@ -404,7 +440,11 @@ export default function Host() {
         /* briefing console */
         .briefingWrap {
           border: 1px solid rgba(210, 180, 140, 0.26);
-          background: linear-gradient(180deg, rgba(210, 180, 140, 0.14), rgba(0, 0, 0, 0.14));
+          background: linear-gradient(
+            180deg,
+            rgba(210, 180, 140, 0.14),
+            rgba(0, 0, 0, 0.14)
+          );
           border-radius: 16px;
           padding: 12px;
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -427,6 +467,7 @@ export default function Host() {
           background: rgba(210, 180, 140, 0.1);
           padding: 6px 10px;
           border-radius: 999px;
+          white-space: nowrap;
         }
         .progressOuter {
           margin-top: 10px;
@@ -468,6 +509,7 @@ export default function Host() {
           color: rgba(255, 255, 255, 0.82);
           font-family: var(--sans);
           font-size: 12px;
+          white-space: nowrap;
         }
         .timelineActive {
           border: 1px solid rgba(212, 175, 55, 0.28);
@@ -508,6 +550,7 @@ export default function Host() {
         }
         .playerLeft {
           min-width: 280px;
+          flex: 1 1 auto;
         }
         .playerNameRow {
           display: flex;
@@ -528,6 +571,7 @@ export default function Host() {
           color: var(--muted);
           font-family: var(--sans);
           font-size: 12px;
+          max-width: 100%;
         }
         .pillPrivate {
           border: 1px solid rgba(210, 180, 140, 0.25);
@@ -564,6 +608,7 @@ export default function Host() {
           cursor: pointer;
           font-family: var(--sans);
           font-size: 13px;
+          min-height: 44px; /* tap target */
         }
         .menuItem:hover {
           background: rgba(255, 255, 255, 0.06);
@@ -635,6 +680,114 @@ export default function Host() {
           box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
           z-index: 60;
         }
+
+        /* ✅ MOBILE (single breakpoint per your rule) */
+        @media (max-width: 900px) {
+          .row {
+            margin-bottom: 10px;
+          }
+
+          /* header status becomes left-aligned, full-width (less cramped) */
+          .headerStatus {
+            width: 100%;
+            align-items: flex-start;
+            text-align: left;
+            max-width: none;
+            gap: 10px;
+          }
+          .statusBadges {
+            justify-content: flex-start;
+            width: 100%;
+          }
+          .statusActions {
+            justify-content: flex-start;
+            width: 100%;
+            gap: 10px;
+          }
+          .statusActions :global(.deadair-btn) {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 13px;
+          }
+
+          /* timeline pills stack nicely */
+          .timelineRow {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          .timelinePill {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          /* round buttons: 2-col grid so it’s not a long wrap mess */
+          .btnRow {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            align-items: stretch;
+          }
+          .btnRow :global(.deadair-btn) {
+            width: 100%;
+          }
+
+          /* briefing controls: let small text breathe */
+          .briefingTop {
+            align-items: flex-start;
+          }
+          .hintPill {
+            width: 100%;
+            justify-content: center;
+          }
+
+          /* narration card elements keep full width */
+          audio {
+            width: 100%;
+          }
+
+          /* player rows: stack + full-width action buttons */
+          .playerItem {
+            padding: 12px 0;
+            gap: 10px;
+          }
+          .playerLeft {
+            min-width: unset;
+            width: 100%;
+          }
+          .playerNameRow {
+            align-items: flex-start;
+          }
+
+          /* per-player button row goes full-width, stacked */
+          .playerItem .btnRow {
+            grid-template-columns: 1fr;
+          }
+
+          /* links dropdown button (top of Players card) goes full width */
+          .menuWrap {
+            width: 100%;
+          }
+          .menuWrap :global(.deadair-btn) {
+            width: 100%;
+          }
+          .menu {
+            width: min(92vw, 360px);
+            right: 0;
+          }
+
+          /* make the "Open player view" button full width for fat-finger safety */
+          .playerNameRow :global(.deadair-btn) {
+            width: 100%;
+          }
+        }
+
+        /* extra tiny phones */
+        @media (max-width: 420px) {
+          .btnRow {
+            grid-template-columns: 1fr; /* round buttons become single column */
+          }
+        }
       `}</style>
 
       <div className="deadair-wrap">
@@ -643,8 +796,8 @@ export default function Host() {
           <div>
             <h1 className="deadair-title">Dead Air</h1>
             <p className="deadair-sub" style={{ letterSpacing: "0.3px" }}>
-              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span>{" "}
-              Case file: <span className="mono">{game.id}</span>
+              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case
+              file: <span className="mono">{game.id}</span>
             </p>
           </div>
 
@@ -652,7 +805,8 @@ export default function Host() {
           <div className="headerStatus">
             <div className="statusBadges">
               <span className="badge">
-                Phase: <b>{currentRound === 0 ? "Setup" : `Round ${currentRound}`}</b>
+                Phase:{" "}
+                <b>{currentRound === 0 ? "Setup" : `Round ${currentRound}`}</b>
               </span>
 
               <span className="badge">
@@ -665,7 +819,10 @@ export default function Host() {
             </div>
 
             <div className="statusActions">
-              <button className="deadair-btn deadair-btnPrimary" onClick={openHostIntake}>
+              <button
+                className="deadair-btn deadair-btnPrimary"
+                onClick={openHostIntake}
+              >
                 Open Host Intake
               </button>
 
@@ -678,22 +835,55 @@ export default function Host() {
 
         {/* Status */}
         <div className="deadair-card">
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
-            <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>Status</h3>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "baseline",
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                fontFamily: "var(--sans)",
+                fontSize: 15,
+                letterSpacing: "0.2px",
+              }}
+            >
+              Status
+            </h3>
             <div className="small">
-              If you know your guests well enough, you can fill their intakes yourself. If not… they can do it. We’re flexible.
+              If you know your guests well enough, you can fill their intakes
+              yourself. If not… they can do it. We’re flexible.
             </div>
           </div>
 
           {/* Timeline */}
           <div className="timelineRow">
-            <span className={`timelinePill ${stepCollectActive ? "timelineActive" : ""}`}>
-              🧾 Collect Intakes <span style={{ opacity: 0.8 }}>({intakeDone}/{totalPlayers})</span>
+            <span
+              className={`timelinePill ${
+                stepCollectActive ? "timelineActive" : ""
+              }`}
+            >
+              🧾 Collect Intakes{" "}
+              <span style={{ opacity: 0.8 }}>
+                ({intakeDone}/{totalPlayers})
+              </span>
             </span>
-            <span className={`timelinePill ${stepProcessingActive ? "timelineActive" : ""}`}>
+            <span
+              className={`timelinePill ${
+                stepProcessingActive ? "timelineActive" : ""
+              }`}
+            >
               🕯️ Processing <span style={{ opacity: 0.8 }}>(24–48 hrs)</span>
             </span>
-            <span className={`timelinePill ${stepReadyActive ? "timelineActive" : ""}`}>🩸 Ready to Play</span>
+            <span
+              className={`timelinePill ${stepReadyActive ? "timelineActive" : ""}`}
+            >
+              🩸 Ready to Play
+            </span>
           </div>
 
           {/* Host Briefing (Setup only) */}
@@ -702,13 +892,23 @@ export default function Host() {
               <div style={{ marginTop: 12 }}>
                 <div className="briefingWrap">
                   <div className="briefingTop">
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <span className="deadair-chip">🎧 Host Briefing</span>
                       <span className="deadair-sub" style={{ margin: 0 }}>
-                        Listen first — it prevents “why is nothing working” energy.
+                        Listen first — it prevents “why is nothing working”
+                        energy.
                       </span>
                     </div>
-                    <span className="hintPill">{briefingListened ? "✅ listened" : "📌 play me first"}</span>
+                    <span className="hintPill">
+                      {briefingListened ? "✅ listened" : "📌 play me first"}
+                    </span>
                   </div>
 
                   <audio
@@ -759,7 +959,10 @@ export default function Host() {
                     {!briefingListened && (
                       <button
                         className="deadair-btn"
-                        style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }}
+                        style={{
+                          borderColor: "rgba(212,175,55,0.30)",
+                          background: "rgba(212,175,55,0.12)",
+                        }}
                         onClick={markBriefingListened}
                       >
                         Mark listened
@@ -767,12 +970,18 @@ export default function Host() {
                     )}
 
                     <span className="small" style={{ marginTop: 0 }}>
-                      Finish intakes → we process (24–48 hrs) → email when ready → access for 6 months.
+                      Finish intakes → we process (24–48 hrs) → email when ready
+                      → access for 6 months.
                     </span>
                   </div>
 
                   <div className="progressOuter">
-                    <div className="progressInner" style={{ width: `${Math.round(briefingProgress * 100)}%` }} />
+                    <div
+                      className="progressInner"
+                      style={{
+                        width: `${Math.round(briefingProgress * 100)}%`,
+                      }}
+                    />
                   </div>
 
                   <div className="timeRow">
@@ -788,17 +997,21 @@ export default function Host() {
 
           {!allIntakesComplete ? (
             <p className="deadair-sub" style={{ marginTop: 10 }}>
-              Waiting on intake forms: <b>{intakeDone}</b> / <b>{totalPlayers}</b> complete.
+              Waiting on intake forms: <b>{intakeDone}</b> / <b>{totalPlayers}</b>{" "}
+              complete.
               <br />
-              Send players their links below, or fill them yourself using <b>Open Host Intake</b>.
+              Send players their links below, or fill them yourself using{" "}
+              <b>Open Host Intake</b>.
             </p>
           ) : !storyReady ? (
             <p className="deadair-sub" style={{ marginTop: 10 }}>
               All intake forms are complete.
               <br />
-              We’ve been notified and will begin processing your case. Please allow <b>24–48 hours</b>.
+              We’ve been notified and will begin processing your case. Please
+              allow <b>24–48 hours</b>.
               <br />
-              You’ll receive an email when it’s ready. (No, you can’t “just peek” at the ending.)
+              You’ll receive an email when it’s ready. (No, you can’t “just
+              peek” at the ending.)
             </p>
           ) : (
             <p className="deadair-sub" style={{ marginTop: 10 }}>
@@ -818,7 +1031,11 @@ export default function Host() {
                   key={r}
                   onClick={() => requestStartRound(r)}
                   disabled={disabled}
-                  className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
+                  className={[
+                    "deadair-btn",
+                    isCurrent ? "deadair-btnPrimary" : "",
+                    disabled ? "deadair-btnDisabled" : "",
+                  ].join(" ")}
                   title={roundButtonTitle(r)}
                 >
                   {roundButtonLabel(r)}
@@ -838,24 +1055,38 @@ export default function Host() {
         <h3 className="sectionTitle">Narration for Current Phase</h3>
         <div className="deadair-card">
           {currentRound === 0 ? (
-            <p className="deadair-sub">Setup mode. Start Round 1 when your case is ready.</p>
+            <p className="deadair-sub">
+              Setup mode. Start Round 1 when your case is ready.
+            </p>
           ) : (
             <>
               {currentRoundRow?.narration_audio_url ? (
                 <>
-                  <div className="badge" style={{ display: "inline-flex", marginBottom: 10 }}>
+                  <div
+                    className="badge"
+                    style={{ display: "inline-flex", marginBottom: 10 }}
+                  >
                     <span className="deadair-dot" />
                     Audio ready
                   </div>
 
-                  <audio controls src={currentRoundRow.narration_audio_url ?? undefined} style={{ width: "100%" }} />
+                  <audio
+                    controls
+                    src={currentRoundRow.narration_audio_url ?? undefined}
+                    style={{ width: "100%" }}
+                  />
 
-                  {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
+                  {currentRound === 4 &&
+                  currentRoundRow?.narration_audio_url_part_b ? (
                     <div style={{ marginTop: 12 }}>
                       <div className="deadair-chip" style={{ marginBottom: 8 }}>
                         Reveal — Part B (play after accusations)
                       </div>
-                      <audio controls src={currentRoundRow.narration_audio_url_part_b ?? undefined} style={{ width: "100%" }} />
+                      <audio
+                        controls
+                        src={currentRoundRow.narration_audio_url_part_b ?? undefined}
+                        style={{ width: "100%" }}
+                      />
                     </div>
                   ) : null}
                 </>
@@ -878,8 +1109,18 @@ export default function Host() {
         {/* Players */}
         <h3 className="sectionTitle">Players</h3>
         <div className="deadair-card">
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <div className="small">Pending players float to the top. (This is not a judgment. Mostly.)</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div className="small">
+              Pending players float to the top. (This is not a judgment. Mostly.)
+            </div>
 
             {/* ✅ dropdown replaces multiple copy buttons */}
             <div className="btnRow" style={{ marginTop: 0 }}>
@@ -946,7 +1187,9 @@ export default function Host() {
                       code: <span className="mono">{p.code}</span>
                     </span>
 
-                    <span className={`pill pillPrivate`}>intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
+                    <span className={`pill pillPrivate`}>
+                      intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
+                    </span>
 
                     <button
                       className="deadair-btn deadair-btnGhost"
@@ -973,14 +1216,24 @@ export default function Host() {
                 <div className="btnRow">
                   <button
                     className="deadair-btn deadair-btnGhost"
-                    onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
+                    onClick={() =>
+                      copyToClipboard(
+                        playerIntakeLink(p.code),
+                        `Copied ${p.name}'s intake link`
+                      )
+                    }
                   >
                     Copy intake link
                   </button>
 
                   <button
                     className="deadair-btn deadair-btnPrimary"
-                    onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
+                    onClick={() =>
+                      copyToClipboard(
+                        playerJoinLink(p.code),
+                        `Copied ${p.name}'s join link`
+                      )
+                    }
                   >
                     Copy join link
                   </button>
@@ -994,7 +1247,12 @@ export default function Host() {
 
         {/* Confirm modal */}
         {confirmRound !== null && (
-          <div className="modalOverlay" onClick={() => setConfirmRound(null)} role="dialog" aria-modal="true">
+          <div
+            className="modalOverlay"
+            onClick={() => setConfirmRound(null)}
+            role="dialog"
+            aria-modal="true"
+          >
             <div className="modalCard" onClick={(e) => e.stopPropagation()}>
               <h4 className="modalTitle">Start Round {confirmRound}?</h4>
               <p className="modalBody">
@@ -1004,7 +1262,10 @@ export default function Host() {
               </p>
 
               <div className="modalBtnRow">
-                <button className="deadair-btn deadair-btnGhost" onClick={() => setConfirmRound(null)}>
+                <button
+                  className="deadair-btn deadair-btnGhost"
+                  onClick={() => setConfirmRound(null)}
+                >
                   Cancel
                 </button>
 
