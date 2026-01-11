@@ -149,9 +149,7 @@ function AudioConsole(props: {
       }
 
       // Allocate strict buffer
-      freqRef.current = new Uint8Array<ArrayBuffer>(
-        new ArrayBuffer(analyser.frequencyBinCount)
-      );
+      freqRef.current = new Uint8Array<ArrayBuffer>(new ArrayBuffer(analyser.frequencyBinCount));
 
       // IMPORTANT: ensure sound always routes to destination.
       try {
@@ -188,9 +186,7 @@ function AudioConsole(props: {
         const nextBars = Array.from({ length: BAR_COUNT }, (_, i) => {
           const phase = i * 0.45;
           const a = 0.14 + 0.06 * (i % 3); // slight variance
-          const v =
-            0.12 +
-            a * (0.5 + 0.5 * Math.sin(t * (2.0 + (i % 4) * 0.22) + phase));
+          const v = 0.12 + a * (0.5 + 0.5 * Math.sin(t * (2.0 + (i % 4) * 0.22) + phase));
           return Math.max(0.1, Math.min(1, v));
         });
 
@@ -241,8 +237,6 @@ function AudioConsole(props: {
       }
 
       // ✅ Build 11 bars over speech-friendly spectrum
-      // Concentrate more resolution in lows/mids (speech intelligibility),
-      // taper highs so it doesn’t look like rave mode.
       const ranges: Array<[number, number, number]> = [
         [0.02, 0.06, 2.35],
         [0.06, 0.09, 2.30],
@@ -259,7 +253,6 @@ function AudioConsole(props: {
 
       const nextBars = ranges.map(([a, b, gain]) => {
         const v = band(a, b) * gain;
-        // Keep a tasteful floor so it feels “alive”
         return Math.max(0.1, Math.min(1, v));
       });
 
@@ -344,10 +337,7 @@ function AudioConsole(props: {
     const el = audioRef.current;
     if (!el || !src) return;
     const d = el.duration || 0;
-    const next = Math.max(
-      0,
-      Math.min(d || Number.MAX_SAFE_INTEGER, (el.currentTime || 0) + delta)
-    );
+    const next = Math.max(0, Math.min(d || Number.MAX_SAFE_INTEGER, (el.currentTime || 0) + delta));
     el.currentTime = next;
     syncFromEl(el);
   }
@@ -373,36 +363,27 @@ function AudioConsole(props: {
   const scanYOffset = Math.round(energy * 10);
 
   // ✅ Ensure bars never exceed their container:
-  // .acEq height is 44; padding is 8 top/bottom => inner ~28px
-  // We'll clamp bar px to MAX_BAR_PX to avoid overflow and weird cap placement.
   const MAX_BAR_PX = 28;
 
-  // widths per bar to avoid uniform “cheap sticks”
   const widths = useMemo(() => {
     const base = [6, 5, 6, 5, 6, 5, 6, 5, 6, 5, 6];
-    // If BAR_COUNT changes, generate a pattern
     if (base.length === BAR_COUNT) return base;
     return Array.from({ length: BAR_COUNT }, (_, i) => (i % 2 === 0 ? 6 : 5));
   }, [BAR_COUNT]);
 
   return (
     <div
-      className={`acWrap ${compact ? "acCompact" : ""} ${
-        playing ? "acIsPlaying" : ""
-      } ${disabled ? "acDisabled" : ""}`}
+      className={`acWrap ${compact ? "acCompact" : ""} ${playing ? "acIsPlaying" : ""} ${
+        disabled ? "acDisabled" : ""
+      }`}
     >
       <style jsx>{`
         .acWrap {
           border-radius: 18px;
           padding: 14px;
           border: 1px solid rgba(212, 175, 55, 0.26);
-          background: linear-gradient(
-            180deg,
-            rgba(16, 18, 22, 0.66),
-            rgba(0, 0, 0, 0.22)
-          );
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
-            0 18px 62px rgba(0, 0, 0, 0.56);
+          background: linear-gradient(180deg, rgba(16, 18, 22, 0.66), rgba(0, 0, 0, 0.22));
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 62px rgba(0, 0, 0, 0.56);
           position: relative;
           overflow: hidden;
         }
@@ -412,11 +393,7 @@ function AudioConsole(props: {
           position: absolute;
           inset: -160px -160px auto -160px;
           height: 300px;
-          background: radial-gradient(
-            600px 280px at 30% 40%,
-            rgba(212, 175, 55, ${glow}),
-            transparent 60%
-          );
+          background: radial-gradient(600px 280px at 30% 40%, rgba(212, 175, 55, ${glow}), transparent 60%);
           pointer-events: none;
         }
 
@@ -466,16 +443,7 @@ function AudioConsole(props: {
           letter-spacing: 0.2px;
           font-size: 15px;
           line-height: 1.25;
-          font-family: var(
-            --sans,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            Segoe UI,
-            Roboto,
-            Helvetica,
-            Arial
-          );
+          font-family: var(--sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
         }
 
         .acRight {
@@ -492,16 +460,7 @@ function AudioConsole(props: {
           font-size: 12px;
           line-height: 1.35;
           max-width: 78ch;
-          font-family: var(
-            --sans,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            Segoe UI,
-            Roboto,
-            Helvetica,
-            Arial
-          );
+          font-family: var(--sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
         }
 
         .acTag {
@@ -561,8 +520,7 @@ function AudioConsole(props: {
           height: 10px;
           border-radius: 999px;
           background: rgba(177, 29, 42, 1);
-          box-shadow: 0 0 0 4px rgba(177, 29, 42, 0.22),
-            0 0 22px rgba(177, 29, 42, 0.65);
+          box-shadow: 0 0 0 4px rgba(177, 29, 42, 0.22), 0 0 22px rgba(177, 29, 42, 0.65);
           display: inline-block;
         }
 
@@ -585,7 +543,6 @@ function AudioConsole(props: {
           }
         }
 
-        /* ✅ Upgraded EQ: wider + more bars + bars stay inside */
         .acEq {
           position: relative;
           width: 220px;
@@ -597,35 +554,22 @@ function AudioConsole(props: {
           padding: 8px 12px;
           border-radius: 16px;
           border: 1px solid rgba(255, 255, 255, 0.14);
-          background: linear-gradient(
-            180deg,
-            rgba(0, 0, 0, 0.22),
-            rgba(0, 0, 0, 0.12)
-          );
+          background: linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.12));
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-          overflow: hidden; /* keeps everything inside */
+          overflow: hidden;
           z-index: 1;
         }
 
-        /* grid */
         .acEqGrid {
           position: absolute;
           inset: 0;
-          background-image: linear-gradient(
-              rgba(255, 255, 255, 0.06) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(255, 255, 255, 0.04) 1px,
-              transparent 1px
-            );
+          background-image: linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
           background-size: 100% 10px, 12px 100%;
           opacity: 0.35;
           pointer-events: none;
         }
 
-        /* scan shimmer */
         .acEqScan {
           position: absolute;
           inset: -40% 0 -40% 0;
@@ -641,7 +585,6 @@ function AudioConsole(props: {
           mix-blend-mode: screen;
         }
 
-        /* VU label + tick rail on right edge */
         .acVu {
           position: absolute;
           right: 8px;
@@ -678,7 +621,6 @@ function AudioConsole(props: {
           margin-bottom: 2px;
           display: grid;
           grid-template-rows: repeat(6, 1fr);
-          gap: 0;
           align-items: center;
           justify-items: end;
         }
@@ -714,14 +656,8 @@ function AudioConsole(props: {
         .bar {
           width: 100%;
           border-radius: 999px;
-          background: linear-gradient(
-            180deg,
-            rgba(212, 175, 55, 0.2),
-            rgba(212, 175, 55, 0.55) 35%,
-            rgba(177, 29, 42, 0.92)
-          );
-          box-shadow: 0 10px 24px rgba(177, 29, 42, ${0.14 + energy * 0.24}),
-            0 0 0 1px rgba(255, 255, 255, 0.08),
+          background: linear-gradient(180deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.55) 35%, rgba(177, 29, 42, 0.92));
+          box-shadow: 0 10px 24px rgba(177, 29, 42, ${0.14 + energy * 0.24}), 0 0 0 1px rgba(255, 255, 255, 0.08),
             inset 0 1px 0 rgba(255, 255, 255, 0.12);
           opacity: 0.96;
           transform-origin: bottom;
@@ -733,12 +669,7 @@ function AudioConsole(props: {
           content: "";
           position: absolute;
           inset: 0;
-          background: linear-gradient(
-            180deg,
-            rgba(255, 255, 255, 0.18),
-            transparent 45%,
-            transparent
-          );
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 45%, transparent);
           opacity: 0.35;
         }
 
@@ -750,8 +681,7 @@ function AudioConsole(props: {
           height: 6px;
           border-radius: 999px;
           background: rgba(212, 175, 55, ${0.12 + energy * 0.25});
-          box-shadow: 0 0 16px rgba(212, 175, 55, ${0.08 + energy * 0.22}),
-            0 0 26px rgba(177, 29, 42, ${0.06 + energy * 0.18});
+          box-shadow: 0 0 16px rgba(212, 175, 55, ${0.08 + energy * 0.22}), 0 0 26px rgba(177, 29, 42, ${0.06 + energy * 0.18});
           pointer-events: none;
           filter: blur(0.2px);
         }
@@ -794,21 +724,13 @@ function AudioConsole(props: {
         .acRailInner {
           height: 100%;
           width: 0%;
-          background: linear-gradient(
-            90deg,
-            rgba(177, 29, 42, 0.92),
-            rgba(212, 175, 55, 0.45)
-          );
+          background: linear-gradient(90deg, rgba(177, 29, 42, 0.92), rgba(212, 175, 55, 0.45));
         }
 
         .acRailShine {
           position: absolute;
           inset: 0;
-          background: linear-gradient(
-            180deg,
-            rgba(255, 255, 255, ${railGlow}),
-            transparent 55%
-          );
+          background: linear-gradient(180deg, rgba(255, 255, 255, ${railGlow}), transparent 55%);
           opacity: 0.32;
           pointer-events: none;
         }
@@ -913,10 +835,7 @@ function AudioConsole(props: {
             <div className="acRight">
               {rightTag ? <span className="acTag">{rightTag}</span> : null}
 
-              <span
-                className="acLive"
-                title={meterMode === "real" ? "Audio-reactive" : "Cinematic mode"}
-              >
+              <span className="acLive" title={meterMode === "real" ? "Audio-reactive" : "Cinematic mode"}>
                 <span className={`acDot ${playing ? "acDotPulse" : ""}`} />
                 LIVE
               </span>
@@ -926,7 +845,6 @@ function AudioConsole(props: {
           {subtitle ? <div className="acSub">{subtitle}</div> : null}
         </div>
 
-        {/* ✅ Upgraded EQ markup (11 bars + VU ticks + clamped heights) */}
         <div className="acEq" aria-hidden style={{ position: "relative", zIndex: 1 }}>
           <div className="acEqGrid" aria-hidden />
           <div className="acEqScan" aria-hidden />
@@ -944,13 +862,9 @@ function AudioConsole(props: {
 
           {bars.map((v, i) => {
             const h = Math.max(0.1, Math.min(1, v));
-            // px range: 8..(MAX_BAR_PX)
             const pxRaw = 8 + Math.round(h * (MAX_BAR_PX - 8));
             const px = Math.max(8, Math.min(MAX_BAR_PX, pxRaw));
-
-            // cap stays inside: clamp bottom between 0..(MAX_BAR_PX-6)
             const capBottom = Math.max(0, Math.min(MAX_BAR_PX - 6, px - 2));
-
             const w = widths[i] ?? 6;
 
             return (
@@ -1005,30 +919,15 @@ function AudioConsole(props: {
           {playing ? "Pause" : "Play"}
         </button>
 
-        <button
-          className="deadair-btn deadair-btnGhost"
-          onClick={() => jump(-10)}
-          disabled={!src || !ready}
-          title="Replay 10 seconds"
-        >
+        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(-10)} disabled={!src || !ready} title="Replay 10 seconds">
           ↺ 10s
         </button>
 
-        <button
-          className="deadair-btn deadair-btnGhost"
-          onClick={() => jump(10)}
-          disabled={!src || !ready}
-          title="Skip ahead 10 seconds"
-        >
+        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(10)} disabled={!src || !ready} title="Skip ahead 10 seconds">
           10s ↻
         </button>
 
-        <button
-          className="deadair-btn deadair-btnGhost"
-          onClick={restart}
-          disabled={!src}
-          title="Restart narration"
-        >
+        <button className="deadair-btn deadair-btnGhost" onClick={restart} disabled={!src} title="Restart narration">
           Restart
         </button>
       </div>
@@ -1084,6 +983,9 @@ export default function Host() {
   // Narration text toggle (hidden by default)
   const [showNarrationText, setShowNarrationText] = useState(false);
 
+  // ✅ Setup: Players collapsible (remember preference)
+  const [playersOpen, setPlayersOpen] = useState(true);
+
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "http://localhost:3000";
     return window.location.origin;
@@ -1095,6 +997,25 @@ export default function Host() {
   useEffect(() => {
     setShowNarrationText(false);
   }, [currentRound]);
+
+  useEffect(() => {
+    // remember accordion state (per game)
+    try {
+      if (!gameId) return;
+      const key = `mm:${gameId}:host_players_open`;
+      const v = window.localStorage.getItem(key);
+      if (v === "0") setPlayersOpen(false);
+      if (v === "1") setPlayersOpen(true);
+    } catch {}
+  }, [gameId]);
+
+  function setPlayersOpenAndPersist(next: boolean) {
+    setPlayersOpen(next);
+    try {
+      const key = `mm:${gameId}:host_players_open`;
+      window.localStorage.setItem(key, next ? "1" : "0");
+    } catch {}
+  }
 
   const sortedPlayers = useMemo(() => {
     const copy = [...players];
@@ -1210,9 +1131,7 @@ export default function Host() {
 
     const { data: rs, error: rErr } = await supabase
       .from("rounds")
-      .select(
-        "round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b"
-      )
+      .select("round_number,title,narration_text,narration_audio_url,narration_audio_url_part_b")
       .eq("game_id", gameId)
       .order("round_number");
 
@@ -1244,10 +1163,7 @@ export default function Host() {
       return;
     }
 
-    const { error } = await supabase
-      .from("games")
-      .update({ current_round: nextRound })
-      .eq("id", gameId);
+    const { error } = await supabase.from("games").update({ current_round: nextRound }).eq("id", gameId);
     if (error) alert(error.message);
     await load();
   }
@@ -1300,12 +1216,9 @@ export default function Host() {
             <h2 className="deadair-title" style={{ fontSize: 22 }}>
               Host access blocked
             </h2>
+            <p className="deadair-sub">{errorMsg ?? "Game not found or you don’t have access."}</p>
             <p className="deadair-sub">
-              {errorMsg ?? "Game not found or you don’t have access."}
-            </p>
-            <p className="deadair-sub">
-              Make sure you’re using the host link that includes{" "}
-              <code>?pin=...</code>.
+              Make sure you’re using the host link that includes <code>?pin=...</code>.
             </p>
           </div>
         </div>
@@ -1333,12 +1246,7 @@ export default function Host() {
         }
         .hr {
           height: 1px;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255, 255, 255, 0.12),
-            transparent
-          );
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
           margin: 14px 0;
         }
         .btnRow {
@@ -1409,11 +1317,7 @@ export default function Host() {
 
         .briefingWrap {
           border: 1px solid rgba(210, 180, 140, 0.26);
-          background: linear-gradient(
-            180deg,
-            rgba(210, 180, 140, 0.14),
-            rgba(0, 0, 0, 0.14)
-          );
+          background: linear-gradient(180deg, rgba(210, 180, 140, 0.14), rgba(0, 0, 0, 0.14));
           border-radius: 16px;
           padding: 12px;
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -1505,14 +1409,24 @@ export default function Host() {
           padding: 0;
           list-style: none;
         }
+
+        /* ✅ Player cards now have separation (no “blending into dark”) */
+        .playerList {
+          display: grid;
+          gap: 12px;
+        }
         .playerItem {
           display: flex;
           justify-content: space-between;
           gap: 12px;
-          padding: 14px 0;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          padding: 14px;
           align-items: flex-start;
           flex-wrap: wrap;
+
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.18));
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 60px rgba(0, 0, 0, 0.25);
         }
         .playerLeft {
           min-width: 280px;
@@ -1545,6 +1459,26 @@ export default function Host() {
           color: rgba(255, 255, 255, 0.86);
         }
 
+        /* ✅ copy buttons on same line (wrap if needed) */
+        .playerActionsRow {
+          display: inline-flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .playerActionsRow :global(.deadair-btn) {
+          min-height: 44px;
+        }
+        .playerActionsRow .splitBtn {
+          display: inline-flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: flex-end;
+        }
+
+        /* Collapsible players panel */
         details.acc {
           border-radius: 16px;
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1686,16 +1620,29 @@ export default function Host() {
           }
 
           .playerItem {
-            padding: 12px 0;
+            padding: 12px;
             gap: 10px;
           }
           .playerLeft {
             min-width: unset;
             width: 100%;
           }
-          .playerItem .btnRow {
-            grid-template-columns: 1fr;
+
+          /* On mobile, actions go full width but still keep intake/join on one row when possible */
+          .playerActionsRow {
+            width: 100%;
+            justify-content: flex-start;
           }
+          .playerActionsRow .splitBtn {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+          }
+          .playerActionsRow .splitBtn :global(.deadair-btn) {
+            width: 100%;
+          }
+
           .playerNameRow :global(.deadair-btn) {
             width: 100%;
           }
@@ -1703,6 +1650,9 @@ export default function Host() {
 
         @media (max-width: 420px) {
           .btnRow {
+            grid-template-columns: 1fr;
+          }
+          .playerActionsRow .splitBtn {
             grid-template-columns: 1fr;
           }
         }
@@ -1714,8 +1664,7 @@ export default function Host() {
           <div>
             <h1 className="deadair-title">Dead Air</h1>
             <p className="deadair-sub" style={{ letterSpacing: "0.3px" }}>
-              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span>{" "}
-              Case file: <span className="mono">{game.id}</span>
+              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case file: <span className="mono">{game.id}</span>
             </p>
           </div>
 
@@ -1758,9 +1707,7 @@ export default function Host() {
                 alignItems: "baseline",
               }}
             >
-              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>
-                Status
-              </h3>
+              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>Status</h3>
               <div className="small">
                 If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.
               </div>
@@ -1894,11 +1841,7 @@ export default function Host() {
                     key={r}
                     onClick={() => requestStartRound(r)}
                     disabled={disabled}
-                    className={[
-                      "deadair-btn",
-                      isCurrent ? "deadair-btnPrimary" : "",
-                      disabled ? "deadair-btnDisabled" : "",
-                    ].join(" ")}
+                    className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
                     title={roundButtonTitle(r)}
                   >
                     {roundButtonLabel(r)}
@@ -1919,11 +1862,7 @@ export default function Host() {
                     key={r}
                     onClick={() => requestStartRound(r)}
                     disabled={disabled}
-                    className={[
-                      "deadair-btn",
-                      isCurrent ? "deadair-btnPrimary" : "",
-                      disabled ? "deadair-btnDisabled" : "",
-                    ].join(" ")}
+                    className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
                     title={roundButtonTitle(r)}
                   >
                     {roundButtonLabel(r)}
@@ -1952,13 +1891,7 @@ export default function Host() {
 
                   {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
                     <div style={{ marginTop: 12 }}>
-                      <AudioConsole
-                        title="Reveal — Part B"
-                        subtitle="Play after final accusations."
-                        src={currentRoundRow.narration_audio_url_part_b}
-                        rightTag="Part B"
-                        compact
-                      />
+                      <AudioConsole title="Reveal — Part B" subtitle="Play after final accusations." src={currentRoundRow.narration_audio_url_part_b} rightTag="Part B" compact />
                     </div>
                   ) : null}
                 </>
@@ -1968,24 +1901,12 @@ export default function Host() {
 
               <div className="hr" />
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div className="small" style={{ marginTop: 0 }}>
                   Narration text (reference)
                 </div>
 
-                <button
-                  className="deadair-btn deadair-btnGhost"
-                  onClick={() => setShowNarrationText((v) => !v)}
-                  aria-expanded={showNarrationText}
-                >
+                <button className="deadair-btn deadair-btnGhost" onClick={() => setShowNarrationText((v) => !v)} aria-expanded={showNarrationText}>
                   {showNarrationText ? "Hide text" : "Show text"}
                 </button>
               </div>
@@ -2002,157 +1923,86 @@ export default function Host() {
         {/* Players */}
         <h3 className="sectionTitle">Players</h3>
 
-        {currentRound === 0 ? (
-          <div className="deadair-card">
-            <ul>
-              {sortedPlayers.map((p) => (
-                <li key={p.id} className="playerItem">
-                  <div className="playerLeft">
-                    <div className="playerNameRow">
-                      <b>{p.name}</b>
-
-                      <span className="pill">
-                        code: <span className="mono">{p.code}</span>
-                      </span>
-
-                      <span className="pill pillPrivate">
-                        intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
-                      </span>
-
-                      <button
-                        className="deadair-btn deadair-btnGhost"
-                        style={{ padding: "8px 10px" }}
-                        onClick={() => router.push(`/p/${p.code}`)}
-                        title="Open the player page"
-                      >
-                        👤 Open player view
-                      </button>
-                    </div>
-
-                    {(p.invite_email || p.invite_phone) && (
-                      <div className="small">
-                        Invite:{" "}
-                        <span className="mono">
-                          {p.invite_email ?? ""}
-                          {p.invite_email && p.invite_phone ? " • " : ""}
-                          {p.invite_phone ?? ""}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="btnRow">
-                    <button
-                      className="deadair-btn deadair-btnGhost"
-                      onClick={() =>
-                        copyToClipboard(
-                          playerIntakeLink(p.code),
-                          `Copied ${p.name}'s intake link`
-                        )
-                      }
-                    >
-                      Copy intake link
-                    </button>
-
-                    <button
-                      className="deadair-btn deadair-btnPrimary"
-                      onClick={() =>
-                        copyToClipboard(
-                          playerJoinLink(p.code),
-                          `Copied ${p.name}'s join link`
-                        )
-                      }
-                    >
-                      Copy join link
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <details className="acc">
-            <summary className="accSummary">
-              <span>Players</span>
-              <span className="accMeta">
-                <span>
-                  Intake <b>{intakeDone}</b>/<b>{totalPlayers}</b>
-                </span>
-                <span className="chev">▾</span>
+        {/* ✅ Now collapsible on Setup too */}
+        <details
+          className="acc"
+          open={playersOpen}
+          onToggle={(e) => {
+            const next = (e.currentTarget as HTMLDetailsElement).open;
+            setPlayersOpenAndPersist(next);
+          }}
+        >
+          <summary className="accSummary">
+            <span>{currentRound === 0 ? "Players (Setup)" : "Players"}</span>
+            <span className="accMeta">
+              <span>
+                Intake <b>{intakeDone}</b>/<b>{totalPlayers}</b>
               </span>
-            </summary>
+              <span className="chev">▾</span>
+            </span>
+          </summary>
 
-            <div className="accBody">
-              <div className="deadair-card" style={{ marginTop: 0 }}>
-                <ul>
-                  {sortedPlayers.map((p) => (
-                    <li key={p.id} className="playerItem">
-                      <div className="playerLeft">
-                        <div className="playerNameRow">
-                          <b>{p.name}</b>
+          <div className="accBody">
+            <div className="deadair-card" style={{ marginTop: 0 }}>
+              <ul className="playerList">
+                {sortedPlayers.map((p) => (
+                  <li key={p.id} className="playerItem">
+                    <div className="playerLeft">
+                      <div className="playerNameRow">
+                        <b>{p.name}</b>
 
-                          <span className="pill">
-                            code: <span className="mono">{p.code}</span>
-                          </span>
+                        <span className="pill">
+                          code: <span className="mono">{p.code}</span>
+                        </span>
 
-                          <span className="pill pillPrivate">
-                            intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
-                          </span>
+                        <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
 
-                          <button
-                            className="deadair-btn deadair-btnGhost"
-                            style={{ padding: "8px 10px" }}
-                            onClick={() => router.push(`/p/${p.code}`)}
-                            title="Open the player page"
-                          >
-                            👤 Open player view
-                          </button>
-                        </div>
-
-                        {(p.invite_email || p.invite_phone) && (
-                          <div className="small">
-                            Invite:{" "}
-                            <span className="mono">
-                              {p.invite_email ?? ""}
-                              {p.invite_email && p.invite_phone ? " • " : ""}
-                              {p.invite_phone ?? ""}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="btnRow">
                         <button
                           className="deadair-btn deadair-btnGhost"
-                          onClick={() =>
-                            copyToClipboard(
-                              playerIntakeLink(p.code),
-                              `Copied ${p.name}'s intake link`
-                            )
-                          }
+                          style={{ padding: "8px 10px" }}
+                          onClick={() => router.push(`/p/${p.code}`)}
+                          title="Open the player page"
+                        >
+                          👤 Open player view
+                        </button>
+                      </div>
+
+                      {(p.invite_email || p.invite_phone) && (
+                        <div className="small">
+                          Invite:{" "}
+                          <span className="mono">
+                            {p.invite_email ?? ""}
+                            {p.invite_email && p.invite_phone ? " • " : ""}
+                            {p.invite_phone ?? ""}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ✅ intake + join on the same line (wraps cleanly on small screens) */}
+                    <div className="playerActionsRow">
+                      <div className="splitBtn">
+                        <button
+                          className="deadair-btn deadair-btnGhost"
+                          onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
                         >
                           Copy intake link
                         </button>
 
                         <button
                           className="deadair-btn deadair-btnPrimary"
-                          onClick={() =>
-                            copyToClipboard(
-                              playerJoinLink(p.code),
-                              `Copied ${p.name}'s join link`
-                            )
-                          }
+                          onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
                         >
                           Copy join link
                         </button>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </details>
-        )}
+          </div>
+        </details>
 
         {toast && <div className="toast">{toast}</div>}
 
