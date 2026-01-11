@@ -27,9 +27,7 @@ const CONFLICT_OPTIONS = ["Defensive", "Quiet", "Emotional", "Logical", "Deflect
 const PRESENCE_OPTIONS = ["In control", "Harmless", "Intense", "Hard to read", "Confident"] as const;
 
 const JOKE_TRAIT_OPTIONS = ["Overprepare", "Wing it", "Overthink", "Forget details", "Get competitive", "Stay chill"] as const;
-
 const NIGHT_VIBE_OPTIONS = ["Loud music", "Quiet background", "Food smells", "Outside air", "Screens", "Chaos"] as const;
-
 const BOUNDARY_OPTIONS = ["Family", "Health", "Money", "Work", "Relationships", "Substance use"] as const;
 
 function cleanText(v: unknown) {
@@ -95,6 +93,9 @@ export default function HostIntakePage() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [showSavedToast, setShowSavedToast] = useState<string | null>(null);
   const [requiredError, setRequiredError] = useState<string | null>(null);
+
+  // ✅ mobile: players drawer
+  const [playersOpenMobile, setPlayersOpenMobile] = useState(false);
 
   // per-player "last saved" timestamps (client-only)
   const [lastSavedMap, setLastSavedMap] = useState<Record<string, number>>({});
@@ -284,11 +285,7 @@ export default function HostIntakePage() {
     if (!gameId) return;
     setLoading(true);
 
-    const { data: g, error: gErr } = await supabase
-      .from("games")
-      .select("id,host_pin")
-      .eq("id", gameId)
-      .single();
+    const { data: g, error: gErr } = await supabase.from("games").select("id,host_pin").eq("id", gameId).single();
 
     if (gErr || !g) {
       setGame(null);
@@ -338,13 +335,11 @@ export default function HostIntakePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId]);
 
-  // when player changes, hydrate (with unsaved warning)
   async function safeSelectPlayer(nextId: string, opts?: { skipDirtyConfirm?: boolean }) {
     if (nextId === selectedPlayerId) return;
 
     const skip = opts?.skipDirtyConfirm ?? false;
 
-    // Only warn on manual navigation, not on auto-advance
     if (!skip && dirty) {
       const ok = window.confirm("This file has unsaved notes. Discard changes and switch players?");
       if (!ok) return;
@@ -353,9 +348,11 @@ export default function HostIntakePage() {
     setSelectedPlayerId(nextId);
     const p = players.find((x) => x.id === nextId);
     hydrateFromIntake((p?.intake_json ?? null) as IntakeJson | null);
+
+    // ✅ on mobile, auto-close drawer after selection
+    setPlayersOpenMobile(false);
   }
 
-  // Guard against accidental navigation away with unsaved changes
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
       if (!dirty) return;
@@ -372,17 +369,14 @@ export default function HostIntakePage() {
     setBoundaries((prev) => (prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]));
   }
 
-  // dirty computation
   useEffect(() => {
     if (!selectedPlayerId) return;
     const baseline = baselineRef.current[selectedPlayerId] ?? "{}";
     const now = stableStringify(intakeJson ?? {});
-    const isDirty = baseline !== now;
-    setDirty(isDirty);
+    setDirty(baseline !== now);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlayerId, intakeJson]);
 
-  // Keyboard shortcut: Cmd/Ctrl+S
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -469,7 +463,6 @@ export default function HostIntakePage() {
 
       if (error) throw error;
 
-      // best-effort: server-side post-submit hook (if you have it)
       fetch("/api/intake/after-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -502,7 +495,6 @@ export default function HostIntakePage() {
     }
   }
 
-  // ✅ SEND INTAKE EMAIL (NEW)
   async function sendIntakeInvite(player: any) {
     if (!pinOk) {
       alert("Wrong or missing host PIN.");
@@ -517,7 +509,10 @@ export default function HostIntakePage() {
       let email = String(player.invite_email ?? "").trim();
 
       if (!email) {
-        const entered = window.prompt(`No email saved for ${player.name}.\n\nEnter their email to send the intake link:`, "");
+        const entered = window.prompt(
+          `No email saved for ${player.name}.\n\nEnter their email to send the intake link:`,
+          ""
+        );
         if (!entered) {
           setInviteSendingMap((prev) => ({ ...prev, [player.id]: false }));
           return;
@@ -544,10 +539,7 @@ export default function HostIntakePage() {
         return;
       }
 
-      // reflect saved email in local UI (since API may store it)
-      setPlayers((prev) =>
-        prev.map((p) => (p.id === player.id ? { ...p, invite_email: email } : p))
-      );
+      setPlayers((prev) => prev.map((p) => (p.id === player.id ? { ...p, invite_email: email } : p)));
 
       const now = Date.now();
       setInviteSentMap((prev) => ({ ...prev, [player.id]: now }));
@@ -561,13 +553,11 @@ export default function HostIntakePage() {
     }
   }
 
-  // progress
   const intakeTotal = players.length;
   const intakeCompleted = players.filter((p) => !!p.intake_complete).length;
   const remaining = Math.max(0, intakeTotal - intakeCompleted);
   const progressPct = intakeTotal > 0 ? Math.round((intakeCompleted / intakeTotal) * 100) : 0;
 
-  // derived list for search/filter
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return players.filter((p) => {
@@ -621,7 +611,193 @@ export default function HostIntakePage() {
 
   return (
     <main style={{ minHeight: "100vh", background: theme.bg, padding: 18 }}>
-      <div style={{ maxWidth: 1180, margin: "24px auto" }}>
+      <style jsx>{`
+        :global(*) {
+          box-sizing: border-box;
+        }
+
+        .pageWrap {
+          max-width: 1180px;
+          margin: 24px auto;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: 380px 1fr;
+          gap: 14px;
+          margin-top: 14px;
+          align-items: start;
+        }
+
+        .mobileBar {
+          display: none;
+        }
+
+        .playersCard {
+          padding: 14px;
+          border-radius: 14px;
+          background: ${theme.panel};
+          border: 1px solid ${theme.panelBorder};
+          box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+          color: ${theme.cream};
+          height: fit-content;
+        }
+
+        .paperCard {
+          border-radius: 16px;
+          border: 1px solid ${theme.paperBorder};
+          box-shadow: ${theme.paperShadow};
+          background: ${theme.paper};
+          color: ${theme.ink};
+          overflow: hidden;
+          position: relative;
+          min-width: 0;
+        }
+
+        .paperInner {
+          position: relative;
+          padding: 18px;
+          padding-left: 78px;
+          font-family: ${theme.paperFont};
+        }
+
+        .stickySave {
+          display: none;
+        }
+
+        @media (max-width: 900px) {
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .playersCard {
+            display: none; /* replaced by mobile drawer */
+          }
+
+          .mobileBar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 12px;
+          }
+
+          .paperInner {
+            padding: 14px;
+            padding-left: 14px; /* remove binder rail spacing */
+          }
+
+          .stickySave {
+            display: flex;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 60;
+            padding: 10px;
+            background: rgba(8,10,12,0.82);
+            border-top: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(10px);
+          }
+
+          .stickySaveInner {
+            width: 100%;
+            max-width: 1180px;
+            margin: 0 auto;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+          }
+
+          .stickyBtn {
+            min-height: 44px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.16);
+            background: rgba(0,0,0,0.22);
+            color: rgba(255,255,255,0.92);
+            font-family: ${theme.sans};
+            font-weight: 900;
+            cursor: pointer;
+            white-space: nowrap;
+          }
+
+          .stickyBtnPrimary {
+            border: 1px solid rgba(212,175,55,0.26);
+            background: rgba(117,29,47,0.9);
+            box-shadow: 0 16px 45px rgba(117,29,47,0.22);
+          }
+
+          .stickyMeta {
+            font-family: ${theme.labelFont};
+            font-size: 11px;
+            opacity: 0.75;
+            line-height: 1.2;
+          }
+
+          /* give bottom space so fixed bar doesn't cover fields */
+          .pageWrap {
+            padding-bottom: 86px;
+          }
+        }
+
+        /* Mobile drawer */
+        .drawerOverlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.62);
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          padding: 10px;
+          z-index: 70;
+        }
+        .drawerCard {
+          width: 100%;
+          max-width: 780px;
+          max-height: 88vh;
+          overflow: auto;
+          border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(14,16,20,0.94);
+          color: rgba(255,255,255,0.92);
+          box-shadow: 0 20px 60px rgba(0,0,0,0.65);
+          backdrop-filter: blur(12px);
+        }
+        .drawerTop {
+          position: sticky;
+          top: 0;
+          background: rgba(14,16,20,0.92);
+          border-bottom: 1px solid rgba(255,255,255,0.10);
+          padding: 12px;
+          z-index: 1;
+        }
+        .drawerCloseRow {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+        }
+        .drawerTitle {
+          font-weight: 900;
+          letter-spacing: 0.2px;
+        }
+        .drawerBtn {
+          min-height: 44px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(0,0,0,0.18);
+          color: rgba(255,255,255,0.92);
+          cursor: pointer;
+          font-family: ${theme.sans};
+          font-weight: 900;
+        }
+      `}</style>
+
+      <div className="pageWrap">
         {/* Header */}
         <header
           style={{
@@ -691,6 +867,7 @@ export default function HostIntakePage() {
                   router.push(`/host/${gameId}?pin=${encodeURIComponent(pin)}`);
                 }}
                 style={{
+                  minHeight: 44,
                   color: theme.cream,
                   border: "1px solid rgba(255,255,255,0.16)",
                   background: "rgba(0,0,0,0.20)",
@@ -707,6 +884,7 @@ export default function HostIntakePage() {
 
               <label
                 style={{
+                  minHeight: 44,
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 8,
@@ -727,22 +905,36 @@ export default function HostIntakePage() {
               </label>
             </div>
           </div>
+
+          {/* ✅ Mobile quick controls */}
+          <div className="mobileBar">
+            <button
+              onClick={() => setPlayersOpenMobile(true)}
+              style={{
+                minHeight: 44,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: "rgba(0,0,0,0.20)",
+                color: theme.cream,
+                cursor: "pointer",
+                fontFamily: theme.sans,
+                fontWeight: 900,
+              }}
+            >
+              Players ▾
+            </button>
+
+            <div style={{ fontFamily: theme.labelFont, fontSize: 11, opacity: 0.75 }}>
+              {selectedPlayer?.name ? `Editing: ${selectedPlayer.name}` : "Select a player"}
+              {dirty ? " · ● unsaved" : ""}
+            </div>
+          </div>
         </header>
 
-        <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: 14, marginTop: 14 }}>
-          {/* Player list */}
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 14,
-              background: theme.panel,
-              border: `1px solid ${theme.panelBorder}`,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-              color: theme.cream,
-              height: "fit-content",
-            }}
-          >
-            {/* Search + filter */}
+        <div className="grid">
+          {/* Desktop Player list */}
+          <div className="playersCard">
             <div style={{ display: "grid", gap: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <h2 style={{ margin: 0, fontSize: 18 }}>Players</h2>
@@ -755,6 +947,7 @@ export default function HostIntakePage() {
                 placeholder="Search name, code, or email…"
                 style={{
                   width: "100%",
+                  minHeight: 44,
                   padding: "10px 12px",
                   borderRadius: 12,
                   border: "1px solid rgba(255,255,255,0.14)",
@@ -830,9 +1023,7 @@ export default function HostIntakePage() {
                       </div>
 
                       {p.invite_email ? (
-                        <div style={{ marginTop: 4, fontSize: 12, color: theme.muted }}>
-                          email: {String(p.invite_email)}
-                        </div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: theme.muted }}>email: {String(p.invite_email)}</div>
                       ) : (
                         <div style={{ marginTop: 4, fontSize: 12, color: theme.muted }}>email: —</div>
                       )}
@@ -859,14 +1050,14 @@ export default function HostIntakePage() {
                       )}
                     </button>
 
-                    {/* ✅ actions */}
                     <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
                       <button
                         onClick={() => sendIntakeInvite(p)}
                         disabled={sending}
                         style={{
-                          padding: "8px 10px",
-                          borderRadius: 10,
+                          minHeight: 44,
+                          padding: "10px 12px",
+                          borderRadius: 12,
                           border: "1px solid rgba(255,255,255,0.16)",
                           background: "rgba(0,0,0,0.18)",
                           color: theme.cream,
@@ -888,9 +1079,7 @@ export default function HostIntakePage() {
                       ) : null}
 
                       {inviteErr ? (
-                        <span style={{ fontFamily: theme.sans, fontSize: 12, color: "rgba(255,150,150,0.95)" }}>
-                          {inviteErr}
-                        </span>
+                        <span style={{ fontFamily: theme.sans, fontSize: 12, color: "rgba(255,150,150,0.95)" }}>{inviteErr}</span>
                       ) : null}
                     </div>
                   </div>
@@ -906,17 +1095,7 @@ export default function HostIntakePage() {
           </div>
 
           {/* Paper Form */}
-          <div
-            style={{
-              borderRadius: 16,
-              border: `1px solid ${theme.paperBorder}`,
-              boxShadow: theme.paperShadow,
-              background: theme.paper,
-              color: theme.ink,
-              overflow: "hidden",
-              position: "relative",
-            }}
-          >
+          <div className="paperCard">
             {/* paper overlays */}
             <div
               aria-hidden
@@ -941,7 +1120,7 @@ export default function HostIntakePage() {
               }}
             />
 
-            {/* torn edge top */}
+            {/* torn edges */}
             <div
               aria-hidden
               style={{
@@ -950,14 +1129,12 @@ export default function HostIntakePage() {
                 top: 0,
                 right: 0,
                 height: 18,
-                background:
-                  "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
+                background: "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
                 opacity: 0.55,
                 clipPath:
                   "polygon(0% 70%, 4% 55%, 8% 72%, 12% 50%, 16% 74%, 20% 52%, 24% 76%, 28% 54%, 32% 78%, 36% 56%, 40% 80%, 44% 58%, 48% 82%, 52% 60%, 56% 84%, 60% 62%, 64% 82%, 68% 60%, 72% 78%, 76% 58%, 80% 76%, 84% 54%, 88% 72%, 92% 52%, 96% 70%, 100% 58%, 100% 0%, 0% 0%)",
               }}
             />
-            {/* torn edge bottom */}
             <div
               aria-hidden
               style={{
@@ -966,15 +1143,14 @@ export default function HostIntakePage() {
                 bottom: 0,
                 right: 0,
                 height: 18,
-                background:
-                  "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
+                background: "linear-gradient(90deg, rgba(90,62,26,0.10), rgba(90,62,26,0.02), rgba(90,62,26,0.10))",
                 opacity: 0.55,
                 clipPath:
                   "polygon(0% 100%, 0% 42%, 4% 55%, 8% 40%, 12% 60%, 16% 38%, 20% 58%, 24% 36%, 28% 56%, 32% 34%, 36% 54%, 40% 32%, 44% 52%, 48% 30%, 52% 50%, 56% 32%, 60% 52%, 64% 34%, 68% 54%, 72% 36%, 76% 56%, 80% 38%, 84% 58%, 88% 40%, 92% 60%, 96% 42%, 100% 55%, 100% 100%)",
               }}
             />
 
-            {/* binder holes */}
+            {/* binder holes + margin line (hidden by CSS on mobile via padding change; the elements stay but won't crowd) */}
             <div aria-hidden style={{ position: "absolute", left: 18, top: 70, width: 24, height: "calc(100% - 120px)" }}>
               {Array.from({ length: 3 }).map((_, i) => (
                 <div
@@ -993,7 +1169,6 @@ export default function HostIntakePage() {
               ))}
             </div>
 
-            {/* margin line */}
             <div
               aria-hidden
               style={{
@@ -1006,7 +1181,7 @@ export default function HostIntakePage() {
               }}
             />
 
-            {/* Confidential stamp */}
+            {/* stamp */}
             <div
               aria-hidden
               style={{
@@ -1030,8 +1205,7 @@ export default function HostIntakePage() {
               CONFIDENTIAL
             </div>
 
-            <div style={{ position: "relative", padding: 18, paddingLeft: 78, fontFamily: theme.paperFont }}>
-              {/* classification strip */}
+            <div className="paperInner">
               <div
                 style={{
                   fontFamily: theme.labelFont,
@@ -1119,7 +1293,7 @@ export default function HostIntakePage() {
 
               {!selectedPlayer ? (
                 <p style={{ marginTop: 12, fontFamily: theme.sans, opacity: 0.8 }}>
-                  Select a player on the left to edit their intake.
+                  Select a player (desktop left panel, or mobile “Players ▾”) to edit their intake.
                 </p>
               ) : (
                 <>
@@ -1178,8 +1352,18 @@ export default function HostIntakePage() {
                   <FileDivider label="Section B · Flavor (recommended)" />
 
                   <Section title="Fun / Flavor" subtitle="Short answers are best.">
-                    <TextField label="Hobby people associate with them" value={associatedHobby} onChange={setAssociatedHobby} paperFont={theme.paperFont} />
-                    <TextField label="Comfort habit when stressed" value={comfortHabit} onChange={setComfortHabit} paperFont={theme.paperFont} />
+                    <TextField
+                      label="Hobby people associate with them"
+                      value={associatedHobby}
+                      onChange={setAssociatedHobby}
+                      paperFont={theme.paperFont}
+                    />
+                    <TextField
+                      label="Comfort habit when stressed"
+                      value={comfortHabit}
+                      onChange={setComfortHabit}
+                      paperFont={theme.paperFont}
+                    />
 
                     <RadioRow
                       label="People joke they usually…"
@@ -1216,7 +1400,8 @@ export default function HostIntakePage() {
                               display: "flex",
                               gap: 10,
                               alignItems: "center",
-                              padding: "10px 12px",
+                              padding: "12px 12px",
+                              minHeight: 44,
                               borderRadius: 10,
                               border: "1px solid rgba(0,0,0,0.18)",
                               background: "rgba(255,255,255,0.55)",
@@ -1249,16 +1434,19 @@ export default function HostIntakePage() {
                           background: "rgba(255,255,255,0.65)",
                           resize: "vertical",
                           fontFamily: theme.paperFont,
+                          minHeight: 120,
                         }}
                       />
                     </label>
                   </Section>
 
+                  {/* Desktop action row stays (mobile gets sticky bar) */}
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16, alignItems: "center" }}>
                     <button
                       onClick={save}
                       disabled={saving}
                       style={{
+                        minHeight: 44,
                         padding: "12px 14px",
                         borderRadius: 12,
                         border: "1px solid rgba(0,0,0,0.25)",
@@ -1277,6 +1465,7 @@ export default function HostIntakePage() {
                       onClick={markIncomplete}
                       disabled={saving}
                       style={{
+                        minHeight: 44,
                         padding: "12px 14px",
                         borderRadius: 12,
                         border: "1px solid rgba(0,0,0,0.22)",
@@ -1331,6 +1520,173 @@ export default function HostIntakePage() {
             ) : null}
           </div>
         </div>
+
+        {/* ✅ Mobile sticky save bar */}
+        {selectedPlayer ? (
+          <div className="stickySave">
+            <div className="stickySaveInner">
+              <button
+                className="stickyBtn"
+                onClick={() => setPlayersOpenMobile(true)}
+                title="Open player list"
+              >
+                Players ▾
+              </button>
+
+              <div className="stickyMeta">
+                <div style={{ fontWeight: 900, fontFamily: theme.sans, letterSpacing: 0.2 }}>
+                  {selectedPlayer.name}
+                </div>
+                <div>
+                  {dirty ? "● unsaved" : "✓ saved"}
+                  {selectedLastSaved ? ` · ${formatTime(selectedLastSaved)}` : ""}
+                </div>
+              </div>
+
+              <button
+                className={`stickyBtn stickyBtnPrimary`}
+                onClick={save}
+                disabled={saving}
+                style={{ opacity: saving ? 0.7 : 1 }}
+                title="Save and mark complete"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* ✅ Mobile players drawer */}
+        {playersOpenMobile ? (
+          <div className="drawerOverlay" onClick={() => setPlayersOpenMobile(false)} role="dialog" aria-modal="true">
+            <div className="drawerCard" onClick={(e) => e.stopPropagation()}>
+              <div className="drawerTop">
+                <div className="drawerCloseRow">
+                  <div className="drawerTitle">Players</div>
+                  <button className="drawerBtn" onClick={() => setPlayersOpenMobile(false)}>
+                    Close
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search name, code, or email…"
+                    style={{
+                      width: "100%",
+                      minHeight: 44,
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.14)",
+                      background: "rgba(0,0,0,0.22)",
+                      color: "rgba(255,255,255,0.92)",
+                      fontFamily: theme.sans,
+                      outline: "none",
+                    }}
+                  />
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Chip active={filter === "pending"} onClick={() => setFilter("pending")} label="Pending" />
+                    <Chip active={filter === "complete"} onClick={() => setFilter("complete")} label="Complete" />
+                    <Chip active={filter === "all"} onClick={() => setFilter("all")} label="All" />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: 12, display: "grid", gap: 10 }}>
+                {filteredPlayers.map((p) => {
+                  const active = p.id === selectedPlayerId;
+                  const complete = !!p.intake_complete;
+                  const chips = previewChips(p);
+
+                  const sending = !!inviteSendingMap[p.id];
+                  const sentTs = inviteSentMap[p.id];
+
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        borderRadius: 14,
+                        border: `1px solid ${active ? "rgba(212,175,55,0.45)" : "rgba(255,255,255,0.14)"}`,
+                        background: active ? "rgba(212,175,55,0.10)" : "rgba(255,255,255,0.04)",
+                        padding: 12,
+                      }}
+                    >
+                      <button
+                        onClick={() => safeSelectPlayer(p.id)}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          color: "rgba(255,255,255,0.92)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                          <div style={{ fontWeight: 900 }}>{p.name}</div>
+                          <div style={{ fontFamily: theme.labelFont, fontSize: 11, opacity: 0.8, letterSpacing: 1, textTransform: "uppercase" }}>
+                            {complete ? "Complete" : "Pending"}
+                          </div>
+                        </div>
+
+                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+                          code: <span style={{ fontFamily: theme.labelFont }}>{p.code}</span> · intake: {complete ? "✅" : "❌"}
+                        </div>
+
+                        {chips.length > 0 ? (
+                          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {chips.map((c) => (
+                              <span
+                                key={c}
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 999,
+                                  fontFamily: theme.sans,
+                                  fontSize: 12,
+                                  border: "1px solid rgba(255,255,255,0.14)",
+                                  background: "rgba(0,0,0,0.20)",
+                                  color: "rgba(255,255,255,0.92)",
+                                }}
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </button>
+
+                      <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        <button
+                          className="drawerBtn"
+                          onClick={() => sendIntakeInvite(p)}
+                          disabled={sending}
+                          style={{ opacity: sending ? 0.7 : 1 }}
+                        >
+                          {sending ? "Sending…" : "Send intake form"}
+                        </button>
+
+                        {sentTs ? (
+                          <span style={{ fontFamily: theme.labelFont, fontSize: 11, opacity: 0.7 }}>
+                            Sent {formatTime(sentTs)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {filteredPlayers.length === 0 ? (
+                  <div style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", opacity: 0.8 }}>
+                    No matches.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );
@@ -1341,7 +1697,8 @@ function Chip(props: { active: boolean; label: string; onClick: () => void }) {
     <button
       onClick={props.onClick}
       style={{
-        padding: "8px 10px",
+        minHeight: 44,
+        padding: "10px 12px",
         borderRadius: 999,
         border: `1px solid ${props.active ? "rgba(212,175,55,0.45)" : "rgba(255,255,255,0.14)"}`,
         background: props.active ? "rgba(212,175,55,0.12)" : "rgba(0,0,0,0.18)",
@@ -1349,6 +1706,7 @@ function Chip(props: { active: boolean; label: string; onClick: () => void }) {
         cursor: "pointer",
         fontSize: 13,
         fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        fontWeight: 900,
       }}
     >
       {props.label}
@@ -1414,11 +1772,13 @@ function TextField(props: { label: string; value: string; onChange: (v: string) 
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         style={{
+          minHeight: 44,
           padding: "12px 12px",
           borderRadius: 12,
           border: "1px solid rgba(0,0,0,0.22)",
           background: "rgba(255,255,255,0.65)",
           fontFamily: props.paperFont,
+          width: "100%",
         }}
       />
     </label>
@@ -1450,7 +1810,8 @@ function RadioRow(props: {
                 display: "flex",
                 gap: 10,
                 alignItems: "center",
-                padding: "10px 12px",
+                padding: "12px 12px",
+                minHeight: 44,
                 borderRadius: 12,
                 border: "1px solid rgba(0,0,0,0.18)",
                 background: "rgba(255,255,255,0.55)",
@@ -1467,11 +1828,12 @@ function RadioRow(props: {
             display: "flex",
             gap: 10,
             alignItems: "center",
-            padding: "10px 12px",
+            padding: "12px 12px",
+            minHeight: 44,
             borderRadius: 12,
             border: "1px solid rgba(0,0,0,0.18)",
             background: "rgba(255,255,255,0.55)",
-            maxWidth: 420,
+            maxWidth: 520,
           }}
         >
           <input type="radio" name={props.name} checked={isOtherSelected} onChange={() => props.onChange("__other__")} />
@@ -1484,11 +1846,13 @@ function RadioRow(props: {
             onChange={(e) => props.onOtherChange(e.target.value)}
             placeholder="Type your own…"
             style={{
+              minHeight: 44,
               padding: "12px 12px",
               borderRadius: 12,
               border: "1px solid rgba(0,0,0,0.22)",
               background: "rgba(255,255,255,0.65)",
               fontFamily: props.paperFont,
+              width: "100%",
               maxWidth: 520,
             }}
           />
