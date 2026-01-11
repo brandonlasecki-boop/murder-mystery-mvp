@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -39,33 +39,29 @@ function fmtTime(sec: number) {
 }
 
 /**
- * Cinematic, theme-matching audio controls (B)
- * - Play/Pause
- * - Restart
- * - -10s / +10s
- * - Progress bar (click-to-seek)
- * - Timecode
- * - Optional "Dim room" overlay while playing
+ * Cinematic, theme-matching audio console (self-contained styles)
+ * - LIVE chip + pulsing dot (reliable)
+ * - Animated equalizer while playing
+ * - Click-to-seek rail
+ * - Time as two chips (NOW / END)
  */
 function AudioConsole(props: {
   title: string;
   subtitle?: string;
   src?: string | null;
-  hintRight?: string;
+  rightTag?: string;
   compact?: boolean;
-  dimEnabled: boolean;
-  onToggleDim: () => void;
-  onPlayingChange?: (playing: boolean) => void;
 }) {
-  const { title, subtitle, src, hintRight, compact, dimEnabled, onToggleDim, onPlayingChange } = props;
+  const { title, subtitle, src, rightTag, compact } = props;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0); // 0..1
+  const [progress, setProgress] = useState(0);
   const [time, setTime] = useState({ current: 0, duration: 0 });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // reset when src changes
     setPlaying(false);
     setProgress(0);
     setTime({ current: 0, duration: 0 });
@@ -80,10 +76,6 @@ function AudioConsole(props: {
       // ignore
     }
   }, [src]);
-
-  useEffect(() => {
-    onPlayingChange?.(playing);
-  }, [playing, onPlayingChange]);
 
   function syncFromEl(el: HTMLAudioElement) {
     const d = el.duration || 0;
@@ -140,29 +132,358 @@ function AudioConsole(props: {
   const disabled = !src;
 
   return (
-    <div className={`acWrap ${compact ? "acCompact" : ""} ${disabled ? "acDisabled" : ""}`}>
-      <div className="acHeader">
-        <div className="acHeaderLeft">
-          <div className="acTitle">{title}</div>
+    <div className={`acWrap ${compact ? "acCompact" : ""} ${playing ? "acIsPlaying" : ""} ${disabled ? "acDisabled" : ""}`}>
+      <style jsx>{`
+        .acWrap {
+          border-radius: 18px;
+          padding: 14px;
+          border: 1px solid rgba(212, 175, 55, 0.26);
+          background: linear-gradient(180deg, rgba(16, 18, 22, 0.66), rgba(0, 0, 0, 0.22));
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 62px rgba(0, 0, 0, 0.56);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .acWrap::before {
+          content: "";
+          position: absolute;
+          inset: -140px -140px auto -140px;
+          height: 270px;
+          background: radial-gradient(560px 260px at 30% 40%, rgba(212, 175, 55, 0.18), transparent 60%);
+          pointer-events: none;
+          opacity: 0.95;
+        }
+
+        .acWrap::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.04),
+            transparent 24%,
+            transparent 76%,
+            rgba(0, 0, 0, 0.22)
+          );
+          opacity: 0.9;
+        }
+
+        .acCompact {
+          padding: 12px;
+        }
+
+        .acDisabled {
+          opacity: 0.7;
+        }
+
+        .acTopRow {
+          position: relative;
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 12px;
+          align-items: center;
+          z-index: 1;
+        }
+
+        .acTitleRow {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .acTitle {
+          font-weight: 900;
+          color: rgba(255, 255, 255, 0.94);
+          letter-spacing: 0.2px;
+          font-size: 15px;
+          line-height: 1.25;
+          font-family: var(--sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+        }
+
+        .acRight {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        .acSub {
+          margin-top: 6px;
+          color: rgba(255, 255, 255, 0.74);
+          font-size: 12px;
+          line-height: 1.35;
+          max-width: 78ch;
+          font-family: var(--sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+        }
+
+        .acTag {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.18);
+          font-size: 12px;
+          letter-spacing: 1.2px;
+          text-transform: uppercase;
+          white-space: nowrap;
+          color: rgba(255, 255, 255, 0.78);
+          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+        }
+
+        .acLive {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(212, 175, 55, 0.38);
+          background: rgba(212, 175, 55, 0.12);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          font-size: 12px;
+          letter-spacing: 1.8px;
+          text-transform: uppercase;
+          white-space: nowrap;
+          color: rgba(212, 175, 55, 0.98);
+          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+        }
+
+        .acDot {
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          background: rgba(177, 29, 42, 1);
+          box-shadow: 0 0 0 4px rgba(177, 29, 42, 0.22), 0 0 22px rgba(177, 29, 42, 0.65);
+          display: inline-block;
+        }
+
+        .acDotPulse {
+          animation: acPulse 1.05s ease-in-out infinite;
+        }
+
+        @keyframes acPulse {
+          0% {
+            transform: scale(1);
+            opacity: 0.85;
+          }
+          50% {
+            transform: scale(1.55);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 0.85;
+          }
+        }
+
+        .acEq {
+          position: relative;
+          width: 76px;
+          height: 30px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          gap: 6px;
+          padding: 6px 10px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(0, 0, 0, 0.18);
+          z-index: 1;
+        }
+
+        .bar {
+          width: 7px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, rgba(212, 175, 55, 0.55), rgba(177, 29, 42, 0.92));
+          height: 10px;
+          opacity: 0.85;
+          transform-origin: bottom;
+        }
+
+        .acIsPlaying .bar {
+          animation: acEq 0.95s ease-in-out infinite;
+        }
+        .acIsPlaying .b2 {
+          animation-delay: 0.12s;
+        }
+        .acIsPlaying .b3 {
+          animation-delay: 0.24s;
+        }
+        .acIsPlaying .b4 {
+          animation-delay: 0.18s;
+        }
+        .acIsPlaying .b5 {
+          animation-delay: 0.3s;
+        }
+
+        @keyframes acEq {
+          0% {
+            transform: scaleY(0.55);
+          }
+          40% {
+            transform: scaleY(1.7);
+          }
+          70% {
+            transform: scaleY(0.85);
+          }
+          100% {
+            transform: scaleY(0.55);
+          }
+        }
+
+        .acControls {
+          position: relative;
+          margin-top: 12px;
+          display: grid;
+          grid-template-columns: 1.2fr 1fr 1fr 1fr;
+          gap: 10px;
+          align-items: center;
+          z-index: 1;
+        }
+
+        .acRailRow {
+          position: relative;
+          margin-top: 12px;
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 12px;
+          align-items: center;
+          z-index: 1;
+        }
+
+        .acRailWrap {
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .acRailOuter {
+          position: relative;
+          height: 14px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          overflow: hidden;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .acRailInner {
+          height: 100%;
+          width: 0%;
+          background: linear-gradient(90deg, rgba(177, 29, 42, 0.92), rgba(212, 175, 55, 0.45));
+        }
+
+        .acRailShine {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 55%);
+          opacity: 0.28;
+          pointer-events: none;
+        }
+
+        .acTimeChips {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: nowrap;
+        }
+
+        .acTimeChip {
+          display: inline-flex;
+          align-items: baseline;
+          gap: 8px;
+          padding: 7px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.18);
+          white-space: nowrap;
+        }
+
+        .acTimeLabel {
+          font-size: 11px;
+          letter-spacing: 1.6px;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.62);
+          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+        }
+
+        .acTimeVal {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.86);
+          font-variant-numeric: tabular-nums;
+          min-width: 46px;
+          text-align: right;
+          font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .acDotPulse,
+          .acIsPlaying .bar {
+            animation: none !important;
+          }
+          .bar {
+            height: 14px;
+          }
+        }
+
+        @media (max-width: 900px) {
+          .acTopRow {
+            grid-template-columns: 1fr;
+            align-items: start;
+          }
+          .acEq {
+            width: 100%;
+          }
+          .acControls {
+            grid-template-columns: 1fr 1fr;
+          }
+          .acRailRow {
+            grid-template-columns: 1fr;
+          }
+          .acTimeChips {
+            width: 100%;
+            justify-content: space-between;
+          }
+          .acTimeChip {
+            flex: 1 1 auto;
+            justify-content: space-between;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .acControls {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
+      <div className="acTopRow">
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div className="acTitleRow">
+            <div className="acTitle">{title}</div>
+
+            <div className="acRight">
+              {rightTag ? <span className="acTag">{rightTag}</span> : null}
+
+              <span className="acLive">
+                <span className={`acDot ${playing ? "acDotPulse" : ""}`} style={{ background: "rgba(177,29,42,1)" }} />
+                LIVE
+              </span>
+            </div>
+          </div>
+
           {subtitle ? <div className="acSub">{subtitle}</div> : null}
         </div>
 
-        <div className="acHeaderRight">
-          <div className={`acLive ${playing ? "acLiveOn" : ""}`}>
-            <span className={`acDot ${playing ? "acDotPulse" : ""}`} />
-            LIVE
-          </div>
-
-          {hintRight ? <div className="acHint">{hintRight}</div> : null}
-
-          <button
-            className={`deadair-btn deadair-btnGhost acDimBtn ${dimEnabled ? "acDimOn" : ""}`}
-            onClick={onToggleDim}
-            type="button"
-            title={dimEnabled ? "Turn off dim mode" : "Dim the room while narration plays"}
-          >
-            {dimEnabled ? "Dim: On" : "Dim room"}
-          </button>
+        <div className="acEq" aria-hidden style={{ position: "relative", zIndex: 1 }}>
+          <span className="bar b1" />
+          <span className="bar b2" />
+          <span className="bar b3" />
+          <span className="bar b4" />
+          <span className="bar b5" />
         </div>
       </div>
 
@@ -182,52 +503,41 @@ function AudioConsole(props: {
       />
 
       <div className="acControls">
-        <button
-          className="deadair-btn deadair-btnPrimary acPlayBtn"
-          onClick={toggle}
-          disabled={disabled}
-          title={disabled ? "No audio URL stored yet" : playing ? "Pause narration" : "Play narration"}
-        >
+        <button className="deadair-btn deadair-btnPrimary" onClick={toggle} disabled={disabled} title={disabled ? "No audio URL stored yet" : ""}>
           {playing ? "Pause" : "Play"}
         </button>
 
-        <button
-          className="deadair-btn deadair-btnGhost"
-          onClick={() => jump(-10)}
-          disabled={disabled || !ready}
-          title="Replay 10 seconds"
-        >
+        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(-10)} disabled={disabled || !ready} title="Replay 10 seconds">
           ↺ 10s
         </button>
 
-        <button
-          className="deadair-btn deadair-btnGhost"
-          onClick={() => jump(10)}
-          disabled={disabled || !ready}
-          title="Skip ahead 10 seconds"
-        >
+        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(10)} disabled={disabled || !ready} title="Skip ahead 10 seconds">
           10s ↻
         </button>
 
-        <button
-          className="deadair-btn deadair-btnGhost"
-          onClick={restart}
-          disabled={disabled}
-          title="Restart narration"
-        >
+        <button className="deadair-btn deadair-btnGhost" onClick={restart} disabled={disabled} title="Restart narration">
           Restart
         </button>
       </div>
 
-      <div className="acBarWrap" onClick={seekFromClick} role="button" aria-label="Seek narration">
-        <div className="acBarOuter">
-          <div className="acBarInner" style={{ width: `${Math.round(progress * 100)}%` }} />
+      <div className="acRailRow">
+        <div className="acRailWrap" onClick={seekFromClick} role="button" aria-label="Seek narration">
+          <div className="acRailOuter">
+            <div className="acRailInner" style={{ width: `${Math.round(progress * 100)}%` }} />
+            <div className="acRailShine" />
+          </div>
         </div>
-      </div>
 
-      <div className="acTimeRow">
-        <span className="acTime">{fmtTime(time.current)}</span>
-        <span className="acTime">{fmtTime(time.duration)}</span>
+        <div className="acTimeChips" aria-label="Time">
+          <span className="acTimeChip">
+            <span className="acTimeLabel">NOW</span>
+            <span className="acTimeVal">{fmtTime(time.current)}</span>
+          </span>
+          <span className="acTimeChip">
+            <span className="acTimeLabel">END</span>
+            <span className="acTimeVal">{fmtTime(time.duration)}</span>
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -261,18 +571,17 @@ export default function Host() {
   // Narration text toggle (hidden by default)
   const [showNarrationText, setShowNarrationText] = useState(false);
 
-  // ✅ Dim room toggle (user-controlled) + whether any narration is playing
-  const [dimRoomEnabled, setDimRoomEnabled] = useState(false);
-  const [narrationPlaying, setNarrationPlaying] = useState(false);
-
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "http://localhost:3000";
     return window.location.origin;
   }, []);
 
-  // ✅ hooks must remain unconditional. Safe values even when game is null.
   const storyReady = !!game?.story_generated;
   const currentRound = game?.current_round ?? 0;
+
+  useEffect(() => {
+    setShowNarrationText(false);
+  }, [currentRound]);
 
   const sortedPlayers = useMemo(() => {
     const copy = [...players];
@@ -301,12 +610,6 @@ export default function Host() {
   const stepCollectActive = !allIntakesComplete;
   const stepProcessingActive = allIntakesComplete && !storyReady;
   const stepReadyActive = storyReady;
-
-  // Reset narration text toggle when round changes (reduces clutter)
-  useEffect(() => {
-    setShowNarrationText(false);
-    setNarrationPlaying(false);
-  }, [currentRound]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -489,47 +792,14 @@ export default function Host() {
     );
   }
 
-  const dimActive = currentRound > 0 && dimRoomEnabled && narrationPlaying;
-
   return (
-    <main className={`deadair-page ${dimActive ? "dimActive" : ""}`}>
+    <main className="deadair-page">
       <style jsx>{`
-        /* ✅ mobile-friendly base */
         :global(.deadair-wrap) {
           max-width: 1100px;
         }
         :global(.deadair-btn) {
           min-height: 44px;
-        }
-        :global(.deadair-btnPrimary),
-        :global(.deadair-btnGhost),
-        :global(.deadair-btnDisabled) {
-          min-height: 44px;
-        }
-
-        /* ✅ Dim room overlay (only when enabled + narration playing) */
-        .dimOverlay {
-          position: fixed;
-          inset: 0;
-          background: radial-gradient(
-              900px 520px at 50% 10%,
-              rgba(177, 29, 42, 0.18),
-              transparent 60%
-            ),
-            rgba(0, 0, 0, 0.72);
-          z-index: 15;
-          pointer-events: none;
-          opacity: 0;
-          transition: opacity 240ms ease;
-        }
-        :global(.dimActive) .dimOverlay {
-          opacity: 1;
-        }
-
-        /* ensure content sits above overlay */
-        .contentAboveDim {
-          position: relative;
-          z-index: 20;
         }
 
         .row {
@@ -572,7 +842,6 @@ export default function Host() {
           line-height: 1.4;
         }
 
-        /* header status rail */
         .headerStatus {
           display: flex;
           flex-direction: column;
@@ -612,7 +881,6 @@ export default function Host() {
           white-space: nowrap;
         }
 
-        /* briefing console (setup) */
         .briefingWrap {
           border: 1px solid rgba(210, 180, 140, 0.26);
           background: linear-gradient(180deg, rgba(210, 180, 140, 0.14), rgba(0, 0, 0, 0.14));
@@ -662,7 +930,6 @@ export default function Host() {
           color: rgba(255, 255, 255, 0.7);
         }
 
-        /* timeline */
         .timelineRow {
           display: flex;
           gap: 10px;
@@ -687,7 +954,6 @@ export default function Host() {
           background: rgba(212, 175, 55, 0.12);
         }
 
-        /* narration pre */
         pre {
           margin: 0;
           white-space: pre-wrap;
@@ -704,7 +970,6 @@ export default function Host() {
           border-radius: 14px;
         }
 
-        /* players */
         ul {
           margin: 0;
           padding: 0;
@@ -750,7 +1015,6 @@ export default function Host() {
           color: rgba(255, 255, 255, 0.86);
         }
 
-        /* accordion (Players in rounds 1-4) */
         details.acc {
           border-radius: 16px;
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -789,7 +1053,6 @@ export default function Host() {
           margin-top: 10px;
         }
 
-        /* modal */
         .modalOverlay {
           position: fixed;
           inset: 0;
@@ -832,7 +1095,6 @@ export default function Host() {
           flex-wrap: wrap;
         }
 
-        /* toast */
         .toast {
           position: fixed;
           left: 50%;
@@ -850,180 +1112,7 @@ export default function Host() {
           z-index: 60;
         }
 
-        /* ✅ Cinematic Audio Console (Rounds 1–4) */
-        .acWrap {
-          border-radius: 18px;
-          padding: 14px;
-          border: 1px solid rgba(212, 175, 55, 0.24);
-          background: linear-gradient(180deg, rgba(16, 18, 22, 0.62), rgba(0, 0, 0, 0.22));
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 60px rgba(0, 0, 0, 0.55);
-          position: relative;
-          overflow: hidden;
-        }
-        .acWrap:before {
-          content: "";
-          position: absolute;
-          inset: -120px -120px auto -120px;
-          height: 240px;
-          background: radial-gradient(520px 240px at 30% 40%, rgba(212, 175, 55, 0.16), transparent 60%);
-          pointer-events: none;
-          opacity: 0.9;
-        }
-        .acCompact {
-          padding: 12px;
-        }
-        .acDisabled {
-          opacity: 0.72;
-        }
-
-        .acHeader {
-          position: relative;
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 12px;
-          align-items: start;
-        }
-        .acHeaderLeft {
-          min-width: 0;
-        }
-        .acHeaderRight {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          justify-content: flex-end;
-          flex-wrap: wrap;
-        }
-        .acTitle {
-          font-family: var(--sans);
-          font-weight: 900;
-          color: rgba(255, 255, 255, 0.92);
-          letter-spacing: 0.2px;
-          font-size: 14px;
-          line-height: 1.25;
-        }
-        .acSub {
-          margin-top: 6px;
-          color: rgba(255, 255, 255, 0.72);
-          font-family: var(--sans);
-          font-size: 12px;
-          line-height: 1.35;
-          max-width: 72ch;
-        }
-        .acHint {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-family: var(--mono);
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.78);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          background: rgba(0, 0, 0, 0.18);
-          padding: 6px 10px;
-          border-radius: 999px;
-          white-space: nowrap;
-        }
-
-        .acLive {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-family: var(--mono);
-          font-size: 12px;
-          letter-spacing: 1.6px;
-          text-transform: uppercase;
-          color: rgba(212, 175, 55, 0.95);
-          border: 1px solid rgba(212, 175, 55, 0.34);
-          background: rgba(212, 175, 55, 0.12);
-          padding: 6px 10px;
-          border-radius: 999px;
-          user-select: none;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-        }
-        .acDot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: rgba(177, 29, 42, 0.95);
-          box-shadow: 0 0 0 3px rgba(177, 29, 42, 0.14);
-        }
-        .acDotPulse {
-          animation: acPulse 1.15s ease-in-out infinite;
-        }
-        @keyframes acPulse {
-          0% {
-            transform: scale(1);
-            opacity: 0.85;
-          }
-          50% {
-            transform: scale(1.35);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(1);
-            opacity: 0.85;
-          }
-        }
-
-        .acDimBtn {
-          white-space: nowrap;
-        }
-        .acDimOn {
-          border-color: rgba(212, 175, 55, 0.34) !important;
-          background: rgba(212, 175, 55, 0.12) !important;
-        }
-
-        .acControls {
-          position: relative;
-          margin-top: 12px;
-          display: grid;
-          grid-template-columns: 1.2fr 1fr 1fr 1fr;
-          gap: 10px;
-          align-items: center;
-        }
-        .acPlayBtn {
-          font-size: 14px;
-          letter-spacing: 0.2px;
-        }
-
-        .acBarWrap {
-          position: relative;
-          margin-top: 12px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .acBarOuter {
-          height: 12px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.10);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          overflow: hidden;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-        }
-        .acBarInner {
-          height: 100%;
-          width: 0%;
-          background: linear-gradient(90deg, rgba(177, 29, 42, 0.90), rgba(212, 175, 55, 0.40));
-        }
-        .acTimeRow {
-          margin-top: 8px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-family: var(--mono);
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.72);
-          gap: 18px;
-        }
-        .acTime {
-          font-variant-numeric: tabular-nums;
-          min-width: 54px;
-        }
-
-        /* ✅ MOBILE */
         @media (max-width: 900px) {
-          .row {
-            margin-bottom: 10px;
-          }
           .headerStatus {
             width: 100%;
             align-items: flex-start;
@@ -1066,14 +1155,6 @@ export default function Host() {
             width: 100%;
           }
 
-          .briefingTop {
-            align-items: flex-start;
-          }
-          .hintPill {
-            width: 100%;
-            justify-content: center;
-          }
-
           .playerItem {
             padding: 12px 0;
             gap: 10px;
@@ -1082,36 +1163,10 @@ export default function Host() {
             min-width: unset;
             width: 100%;
           }
-          .playerNameRow {
-            align-items: flex-start;
-          }
           .playerItem .btnRow {
             grid-template-columns: 1fr;
           }
           .playerNameRow :global(.deadair-btn) {
-            width: 100%;
-          }
-
-          summary.accSummary {
-            flex-wrap: wrap;
-            align-items: flex-start;
-          }
-          .accMeta {
-            width: 100%;
-            justify-content: space-between;
-          }
-
-          .acHeader {
-            grid-template-columns: 1fr;
-          }
-          .acHeaderRight {
-            justify-content: flex-start;
-          }
-
-          .acControls {
-            grid-template-columns: 1fr 1fr;
-          }
-          .acControls :global(.deadair-btn) {
             width: 100%;
           }
         }
@@ -1120,16 +1175,10 @@ export default function Host() {
           .btnRow {
             grid-template-columns: 1fr;
           }
-          .acControls {
-            grid-template-columns: 1fr;
-          }
         }
       `}</style>
 
-      {/* Dim overlay lives here so it covers the whole page but doesn't block clicks */}
-      <div className="dimOverlay" aria-hidden />
-
-      <div className="deadair-wrap contentAboveDim">
+      <div className="deadair-wrap">
         {/* Header */}
         <div className="row">
           <div>
@@ -1172,18 +1221,8 @@ export default function Host() {
         {/* Status (Setup only) */}
         {currentRound === 0 ? (
           <div className="deadair-card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "baseline",
-              }}
-            >
-              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>
-                Status
-              </h3>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+              <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>Status</h3>
               <div className="small">
                 If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.
               </div>
@@ -1191,10 +1230,7 @@ export default function Host() {
 
             <div className="timelineRow">
               <span className={`timelinePill ${stepCollectActive ? "timelineActive" : ""}`}>
-                🧾 Collect Intakes{" "}
-                <span style={{ opacity: 0.8 }}>
-                  ({intakeDone}/{totalPlayers})
-                </span>
+                🧾 Collect Intakes <span style={{ opacity: 0.8 }}>({intakeDone}/{totalPlayers})</span>
               </span>
               <span className={`timelinePill ${stepProcessingActive ? "timelineActive" : ""}`}>
                 🕯️ Processing <span style={{ opacity: 0.8 }}>(24–48 hrs)</span>
@@ -1202,7 +1238,7 @@ export default function Host() {
               <span className={`timelinePill ${stepReadyActive ? "timelineActive" : ""}`}>🩸 Ready to Play</span>
             </div>
 
-            {/* Host Briefing (Setup only) */}
+            {/* Host Briefing */}
             <div style={{ marginTop: 12 }}>
               <div className="briefingWrap">
                 <div className="briefingTop">
@@ -1300,7 +1336,7 @@ export default function Host() {
                 <br />
                 We’ve been notified and will begin processing your case. Please allow <b>24–48 hours</b>.
                 <br />
-                You’ll receive an email when it’s ready. (No, you can’t “just peek” at the ending.)
+                You’ll receive an email when it’s ready.
               </p>
             ) : (
               <p className="deadair-sub" style={{ marginTop: 10 }}>
@@ -1320,11 +1356,7 @@ export default function Host() {
                     key={r}
                     onClick={() => requestStartRound(r)}
                     disabled={disabled}
-                    className={[
-                      "deadair-btn",
-                      isCurrent ? "deadair-btnPrimary" : "",
-                      disabled ? "deadair-btnDisabled" : "",
-                    ].join(" ")}
+                    className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
                     title={roundButtonTitle(r)}
                   >
                     {roundButtonLabel(r)}
@@ -1332,12 +1364,6 @@ export default function Host() {
                 );
               })}
             </div>
-
-            {!storyReady && (
-              <p className="small" style={{ marginTop: 10 }}>
-                Rounds 1–4 unlock once your case is ready.
-              </p>
-            )}
           </div>
         ) : (
           <div className="deadair-card">
@@ -1351,11 +1377,7 @@ export default function Host() {
                     key={r}
                     onClick={() => requestStartRound(r)}
                     disabled={disabled}
-                    className={[
-                      "deadair-btn",
-                      isCurrent ? "deadair-btnPrimary" : "",
-                      disabled ? "deadair-btnDisabled" : "",
-                    ].join(" ")}
+                    className={["deadair-btn", isCurrent ? "deadair-btnPrimary" : "", disabled ? "deadair-btnDisabled" : ""].join(" ")}
                     title={roundButtonTitle(r)}
                   >
                     {roundButtonLabel(r)}
@@ -1379,10 +1401,7 @@ export default function Host() {
                     title={`Round ${currentRound} Narration`}
                     subtitle={currentRoundRow?.title ?? undefined}
                     src={currentRoundRow.narration_audio_url}
-                    hintRight={currentRound === 4 ? "Part A" : undefined}
-                    dimEnabled={dimRoomEnabled}
-                    onToggleDim={() => setDimRoomEnabled((v) => !v)}
-                    onPlayingChange={(p) => setNarrationPlaying(p)}
+                    rightTag={currentRound === 4 ? "Part A" : undefined}
                   />
 
                   {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
@@ -1391,11 +1410,8 @@ export default function Host() {
                         title="Reveal — Part B"
                         subtitle="Play after final accusations."
                         src={currentRoundRow.narration_audio_url_part_b}
-                        hintRight="Part B"
+                        rightTag="Part B"
                         compact
-                        dimEnabled={dimRoomEnabled}
-                        onToggleDim={() => setDimRoomEnabled((v) => !v)}
-                        onPlayingChange={(p) => setNarrationPlaying(p)}
                       />
                     </div>
                   ) : null}
@@ -1406,24 +1422,12 @@ export default function Host() {
 
               <div className="hr" />
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div className="small" style={{ marginTop: 0 }}>
                   Narration text (reference)
                 </div>
 
-                <button
-                  className="deadair-btn deadair-btnGhost"
-                  onClick={() => setShowNarrationText((v) => !v)}
-                  aria-expanded={showNarrationText}
-                >
+                <button className="deadair-btn deadair-btnGhost" onClick={() => setShowNarrationText((v) => !v)} aria-expanded={showNarrationText}>
                   {showNarrationText ? "Hide text" : "Show text"}
                 </button>
               </div>
@@ -1478,17 +1482,11 @@ export default function Host() {
                   </div>
 
                   <div className="btnRow">
-                    <button
-                      className="deadair-btn deadair-btnGhost"
-                      onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
-                    >
+                    <button className="deadair-btn deadair-btnGhost" onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}>
                       Copy intake link
                     </button>
 
-                    <button
-                      className="deadair-btn deadair-btnPrimary"
-                      onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
-                    >
+                    <button className="deadair-btn deadair-btnPrimary" onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}>
                       Copy join link
                     </button>
                   </div>
@@ -1521,9 +1519,7 @@ export default function Host() {
                             code: <span className="mono">{p.code}</span>
                           </span>
 
-                          <span className="pill pillPrivate">
-                            intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}
-                          </span>
+                          <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
 
                           <button
                             className="deadair-btn deadair-btnGhost"
@@ -1548,17 +1544,11 @@ export default function Host() {
                       </div>
 
                       <div className="btnRow">
-                        <button
-                          className="deadair-btn deadair-btnGhost"
-                          onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}
-                        >
+                        <button className="deadair-btn deadair-btnGhost" onClick={() => copyToClipboard(playerIntakeLink(p.code), `Copied ${p.name}'s intake link`)}>
                           Copy intake link
                         </button>
 
-                        <button
-                          className="deadair-btn deadair-btnPrimary"
-                          onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}
-                        >
+                        <button className="deadair-btn deadair-btnPrimary" onClick={() => copyToClipboard(playerJoinLink(p.code), `Copied ${p.name}'s join link`)}>
                           Copy join link
                         </button>
                       </div>
@@ -1580,7 +1570,7 @@ export default function Host() {
               <p className="modalBody">
                 Starting a round pushes new instructions to every player.
                 <br />
-                Make sure everyone’s ready (and ideally not “missing in action”).
+                Make sure everyone’s ready.
               </p>
 
               <div className="modalBtnRow">
