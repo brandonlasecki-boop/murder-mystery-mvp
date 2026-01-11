@@ -39,11 +39,11 @@ function fmtTime(sec: number) {
 }
 
 /**
- * Cinematic, theme-matching audio console (self-contained styles)
- * - LIVE chip + pulsing dot (reliable)
- * - Animated equalizer while playing
- * - Click-to-seek rail
- * - Time as two chips (NOW / END)
+ * Cinematic Audio Console
+ * - Tries REAL analyser (WebAudio) for dynamic EQ
+ * - If Supabase Storage CORS blocks analyser data, auto-falls back to a subtle “alive” mode
+ *   so it still feels cinematic and reactive instead of dead bars.
+ * - Audio ALWAYS plays (fallback connection to ctx.destination)
  */
 function AudioConsole(props: {
   title: string;
@@ -55,27 +55,25 @@ function AudioConsole(props: {
   const { title, subtitle, src, rightTag, compact } = props;
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const ctxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // TS strict DOM libs: force ArrayBuffer-backed Uint8Array
+  const freqRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [time, setTime] = useState({ current: 0, duration: 0 });
   const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    // reset when src changes
-    setPlaying(false);
-    setProgress(0);
-    setTime({ current: 0, duration: 0 });
-    setReady(false);
+  const [bars, setBars] = useState<number[]>([0.25, 0.3, 0.22, 0.28, 0.26]);
+  const [energy, setEnergy] = useState(0); // 0..1 (visual energy)
+  const [meterMode, setMeterMode] = useState<"real" | "fallback">("real");
 
-    const el = audioRef.current;
-    if (!el) return;
-    try {
-      el.pause();
-      el.currentTime = 0;
-    } catch {
-      // ignore
-    }
-  }, [src]);
+  const zeroFramesRef = useRef(0);
 
   function syncFromEl(el: HTMLAudioElement) {
     const d = el.duration || 0;
@@ -84,12 +82,232 @@ function AudioConsole(props: {
     setProgress(d > 0 ? c / d : 0);
   }
 
+  function stopMetering() {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    zeroFramesRef.current = 0;
+    setEnergy(0);
+    setBars([0.25, 0.3, 0.22, 0.28, 0.26]);
+  }
+
+  function teardownAudioGraph() {
+    stopMetering();
+
+    try {
+      sourceRef.current?.disconnect();
+    } catch {}
+    try {
+      analyserRef.current?.disconnect();
+    } catch {}
+
+    sourceRef.current = null;
+    analyserRef.current = null;
+    freqRef.current = null;
+  }
+
+  async function ensureAudioGraph() {
+    const el = audioRef.current;
+    if (!el) return;
+
+    if (!ctxRef.current) {
+      // @ts-ignore
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      ctxRef.current = new AC();
+    }
+
+    const ctx = ctxRef.current;
+
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!analyserRef.current) {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.85;
+      analyserRef.current = analyser;
+
+      if (!sourceRef.current) {
+        try {
+          sourceRef.current = ctx.createMediaElementSource(el);
+        } catch {
+          // If this fails (rare), skip metering but do not break playback.
+          analyserRef.current = null;
+          sourceRef.current = null;
+          return;
+        }
+      }
+
+      // Allocate strict buffer
+      freqRef.current = new Uint8Array<ArrayBuffer>(new ArrayBuffer(analyser.frequencyBinCount));
+
+      // IMPORTANT: ensure sound always routes to destination.
+      try {
+        sourceRef.current.connect(analyser);
+        analyser.connect(ctx.destination);
+      } catch {
+        // fallback: direct
+        try {
+          sourceRef.current.disconnect();
+        } catch {}
+        try {
+          analyser.disconnect();
+        } catch {}
+        try {
+          sourceRef.current.connect(ctx.destination);
+        } catch {
+          // If this fails, browser may output silence after MediaElementSource was created.
+          // Nothing safe to do besides reload, but this is extremely uncommon.
+        }
+      }
+    }
+  }
+
+  function startMetering() {
+    const analyser = analyserRef.current;
+    const freqArr = freqRef.current;
+
+    // If analyser not available, fallback visuals (still cinematic)
+    if (!analyser || !freqArr) {
+      setMeterMode("fallback");
+
+      const tickFallback = () => {
+        const t = Date.now() / 1000;
+        // “voice-ish” movement: mild, tight range; not rave mode
+        const b1 = 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.4));
+        const b2 = 0.22 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.9 + 0.9));
+        const b3 = 0.2 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.2 + 1.6));
+        const b4 = 0.18 + 0.1 * (0.5 + 0.5 * Math.sin(t * 2.7 + 2.1));
+        const b5 = 0.16 + 0.09 * (0.5 + 0.5 * Math.sin(t * 2.1 + 2.8));
+        const e = Math.min(1, (b1 + b2 + b3 + b4 + b5) / 2.2);
+
+        setBars([b1, b2, b3, b4, b5]);
+        setEnergy(e);
+
+        rafRef.current = requestAnimationFrame(tickFallback);
+      };
+
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(tickFallback);
+      return;
+    }
+
+    setMeterMode("real");
+    zeroFramesRef.current = 0;
+
+    const n = freqArr.length;
+
+    const band = (loPct: number, hiPct: number) => {
+      const lo = Math.floor(n * loPct);
+      const hi = Math.max(lo + 1, Math.floor(n * hiPct));
+      let sum = 0;
+      for (let i = lo; i < hi; i++) sum += freqArr[i];
+      return sum / (hi - lo) / 255; // 0..1
+    };
+
+    const tick = () => {
+      analyser.getByteFrequencyData(freqArr);
+
+      // If analyser is blocked by CORS, this often returns near-all zeros forever.
+      // Detect and switch to fallback visuals while keeping audio playback.
+      let total = 0;
+      for (let i = 0; i < freqArr.length; i += 32) total += freqArr[i];
+      const looksZero = total < 4; // heuristic
+
+      if (looksZero) {
+        zeroFramesRef.current += 1;
+      } else {
+        zeroFramesRef.current = 0;
+      }
+
+      if (zeroFramesRef.current > 20) {
+        // Switch to fallback visuals so it never feels broken
+        setMeterMode("fallback");
+        stopMetering();
+        // Restart metering in fallback mode
+        setTimeout(() => {
+          if (playing) startMetering();
+        }, 0);
+        return;
+      }
+
+      // tuned for voice (not bass-heavy)
+      const b1 = band(0.02, 0.08);
+      const b2 = band(0.08, 0.16);
+      const b3 = band(0.16, 0.26);
+      const b4 = band(0.26, 0.38);
+      const b5 = band(0.38, 0.55);
+
+      // Make speech feel alive
+      const boosted = [
+        Math.max(0.14, Math.min(1, b1 * 2.25)),
+        Math.max(0.14, Math.min(1, b2 * 2.2)),
+        Math.max(0.14, Math.min(1, b3 * 2.0)),
+        Math.max(0.12, Math.min(1, b4 * 1.85)),
+        Math.max(0.1, Math.min(1, b5 * 1.6)),
+      ];
+
+      const e = Math.min(1, boosted[0] * 0.28 + boosted[1] * 0.26 + boosted[2] * 0.2 + boosted[3] * 0.14 + boosted[4] * 0.12);
+
+      setBars(boosted);
+      setEnergy(e);
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    if (!rafRef.current) rafRef.current = requestAnimationFrame(tick);
+  }
+
+  // Reset when src changes
+  useEffect(() => {
+    setPlaying(false);
+    setProgress(0);
+    setTime({ current: 0, duration: 0 });
+    setReady(false);
+    setMeterMode("real");
+    stopMetering();
+
+    const el = audioRef.current;
+    if (el) {
+      try {
+        el.pause();
+        el.currentTime = 0;
+      } catch {}
+    }
+
+    teardownAudioGraph();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      teardownAudioGraph();
+      try {
+        ctxRef.current?.close();
+      } catch {}
+      ctxRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function toggle() {
     const el = audioRef.current;
     if (!el || !src) return;
+
     try {
-      if (el.paused) await el.play();
-      else el.pause();
+      if (el.paused) {
+        await ensureAudioGraph();
+        await el.play();
+      } else {
+        el.pause();
+      }
     } catch {
       // ignore
     }
@@ -98,8 +316,10 @@ function AudioConsole(props: {
   async function restart() {
     const el = audioRef.current;
     if (!el || !src) return;
+
     try {
       el.currentTime = 0;
+      await ensureAudioGraph();
       await el.play();
     } catch {
       // ignore
@@ -131,6 +351,9 @@ function AudioConsole(props: {
 
   const disabled = !src;
 
+  const glow = 0.12 + energy * 0.38;
+  const railGlow = 0.18 + energy * 0.32;
+
   return (
     <div className={`acWrap ${compact ? "acCompact" : ""} ${playing ? "acIsPlaying" : ""} ${disabled ? "acDisabled" : ""}`}>
       <style jsx>{`
@@ -147,11 +370,10 @@ function AudioConsole(props: {
         .acWrap::before {
           content: "";
           position: absolute;
-          inset: -140px -140px auto -140px;
-          height: 270px;
-          background: radial-gradient(560px 260px at 30% 40%, rgba(212, 175, 55, 0.18), transparent 60%);
+          inset: -160px -160px auto -160px;
+          height: 300px;
+          background: radial-gradient(600px 280px at 30% 40%, rgba(212, 175, 55, ${glow}), transparent 60%);
           pointer-events: none;
-          opacity: 0.95;
         }
 
         .acWrap::after {
@@ -159,13 +381,7 @@ function AudioConsole(props: {
           position: absolute;
           inset: 0;
           pointer-events: none;
-          background: linear-gradient(
-            180deg,
-            rgba(255, 255, 255, 0.04),
-            transparent 24%,
-            transparent 76%,
-            rgba(0, 0, 0, 0.22)
-          );
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 24%, transparent 76%, rgba(0, 0, 0, 0.22));
           opacity: 0.9;
         }
 
@@ -282,8 +498,8 @@ function AudioConsole(props: {
 
         .acEq {
           position: relative;
-          width: 76px;
-          height: 30px;
+          width: 90px;
+          height: 34px;
           display: flex;
           align-items: flex-end;
           justify-content: center;
@@ -300,39 +516,8 @@ function AudioConsole(props: {
           border-radius: 999px;
           background: linear-gradient(180deg, rgba(212, 175, 55, 0.55), rgba(177, 29, 42, 0.92));
           height: 10px;
-          opacity: 0.85;
+          opacity: 0.92;
           transform-origin: bottom;
-        }
-
-        .acIsPlaying .bar {
-          animation: acEq 0.95s ease-in-out infinite;
-        }
-        .acIsPlaying .b2 {
-          animation-delay: 0.12s;
-        }
-        .acIsPlaying .b3 {
-          animation-delay: 0.24s;
-        }
-        .acIsPlaying .b4 {
-          animation-delay: 0.18s;
-        }
-        .acIsPlaying .b5 {
-          animation-delay: 0.3s;
-        }
-
-        @keyframes acEq {
-          0% {
-            transform: scaleY(0.55);
-          }
-          40% {
-            transform: scaleY(1.7);
-          }
-          70% {
-            transform: scaleY(0.85);
-          }
-          100% {
-            transform: scaleY(0.55);
-          }
         }
 
         .acControls {
@@ -379,8 +564,8 @@ function AudioConsole(props: {
         .acRailShine {
           position: absolute;
           inset: 0;
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 55%);
-          opacity: 0.28;
+          background: linear-gradient(180deg, rgba(255, 255, 255, ${railGlow}), transparent 55%);
+          opacity: 0.32;
           pointer-events: none;
         }
 
@@ -420,12 +605,8 @@ function AudioConsole(props: {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .acDotPulse,
-          .acIsPlaying .bar {
+          .acDotPulse {
             animation: none !important;
-          }
-          .bar {
-            height: 14px;
           }
         }
 
@@ -468,8 +649,8 @@ function AudioConsole(props: {
             <div className="acRight">
               {rightTag ? <span className="acTag">{rightTag}</span> : null}
 
-              <span className="acLive">
-                <span className={`acDot ${playing ? "acDotPulse" : ""}`} style={{ background: "rgba(177,29,42,1)" }} />
+              <span className="acLive" title={meterMode === "real" ? "Audio-reactive" : "Cinematic mode"}>
+                <span className={`acDot ${playing ? "acDotPulse" : ""}`} />
                 LIVE
               </span>
             </div>
@@ -479,21 +660,33 @@ function AudioConsole(props: {
         </div>
 
         <div className="acEq" aria-hidden style={{ position: "relative", zIndex: 1 }}>
-          <span className="bar b1" />
-          <span className="bar b2" />
-          <span className="bar b3" />
-          <span className="bar b4" />
-          <span className="bar b5" />
+          {bars.map((v, i) => {
+            const h = Math.max(0.18, Math.min(1, v));
+            const px = 10 + Math.round(h * 20); // 10..30
+            return <span key={i} className="bar" style={{ height: px }} />;
+          })}
         </div>
       </div>
 
       <audio
         ref={audioRef}
+        // With Supabase Storage, analyser data can still be blocked by CORS even if audio plays.
+        // crossOrigin helps when CORS is correctly configured.
+        crossOrigin="anonymous"
         src={src ?? undefined}
         preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
+        onPlay={() => {
+          setPlaying(true);
+          startMetering();
+        }}
+        onPause={() => {
+          setPlaying(false);
+          stopMetering();
+        }}
+        onEnded={() => {
+          setPlaying(false);
+          stopMetering();
+        }}
         onLoadedMetadata={(e) => {
           setReady(true);
           syncFromEl(e.currentTarget);
@@ -503,19 +696,27 @@ function AudioConsole(props: {
       />
 
       <div className="acControls">
-        <button className="deadair-btn deadair-btnPrimary" onClick={toggle} disabled={disabled} title={disabled ? "No audio URL stored yet" : ""}>
+        <button className="deadair-btn deadair-btnPrimary" onClick={async () => {
+          await toggle();
+          // ensure graph attaches on the same gesture
+          if (!playing) {
+            try {
+              await ensureAudioGraph();
+            } catch {}
+          }
+        }} disabled={!src} title={!src ? "No audio URL stored yet" : ""}>
           {playing ? "Pause" : "Play"}
         </button>
 
-        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(-10)} disabled={disabled || !ready} title="Replay 10 seconds">
+        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(-10)} disabled={!src || !ready} title="Replay 10 seconds">
           ↺ 10s
         </button>
 
-        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(10)} disabled={disabled || !ready} title="Skip ahead 10 seconds">
+        <button className="deadair-btn deadair-btnGhost" onClick={() => jump(10)} disabled={!src || !ready} title="Skip ahead 10 seconds">
           10s ↻
         </button>
 
-        <button className="deadair-btn deadair-btnGhost" onClick={restart} disabled={disabled} title="Restart narration">
+        <button className="deadair-btn deadair-btnGhost" onClick={restart} disabled={!src} title="Restart narration">
           Restart
         </button>
       </div>
@@ -1184,8 +1385,7 @@ export default function Host() {
           <div>
             <h1 className="deadair-title">Dead Air</h1>
             <p className="deadair-sub" style={{ letterSpacing: "0.3px" }}>
-              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case file:{" "}
-              <span className="mono">{game.id}</span>
+              THE NARRATION IS LIVE <span style={{ opacity: 0.6 }}>·</span> Case file: <span className="mono">{game.id}</span>
             </p>
           </div>
 
@@ -1194,11 +1394,9 @@ export default function Host() {
               <span className="badge">
                 Phase: <b>{currentRound === 0 ? "Setup" : `Round ${currentRound}`}</b>
               </span>
-
               <span className="badge">
                 Intake: <b>{intakeDone}</b>/<b>{totalPlayers}</b>
               </span>
-
               <span className="badge">
                 PIN: <b>{pin ? "✓" : "✕"}</b>
               </span>
@@ -1223,9 +1421,7 @@ export default function Host() {
           <div className="deadair-card">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
               <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, letterSpacing: "0.2px" }}>Status</h3>
-              <div className="small">
-                If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.
-              </div>
+              <div className="small">If you know your guests well enough, you can fill their intakes yourself. If not… they can do it.</div>
             </div>
 
             <div className="timelineRow">
@@ -1244,9 +1440,7 @@ export default function Host() {
                 <div className="briefingTop">
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                     <span className="deadair-chip">🎧 Host Briefing</span>
-                    <span className="deadair-sub" style={{ margin: 0 }}>
-                      Listen first — it prevents “why is nothing working” energy.
-                    </span>
+                    <span className="deadair-sub" style={{ margin: 0 }}>Listen first — it prevents “why is nothing working” energy.</span>
                   </div>
                   <span className="hintPill">{briefingListened ? "✅ listened" : "📌 play me first"}</span>
                 </div>
@@ -1297,11 +1491,7 @@ export default function Host() {
                   </button>
 
                   {!briefingListened && (
-                    <button
-                      className="deadair-btn"
-                      style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }}
-                      onClick={markBriefingListened}
-                    >
+                    <button className="deadair-btn" style={{ borderColor: "rgba(212,175,55,0.30)", background: "rgba(212,175,55,0.12)" }} onClick={markBriefingListened}>
                       Mark listened
                     </button>
                   )}
@@ -1397,22 +1587,11 @@ export default function Host() {
             <>
               {currentRoundRow?.narration_audio_url ? (
                 <>
-                  <AudioConsole
-                    title={`Round ${currentRound} Narration`}
-                    subtitle={currentRoundRow?.title ?? undefined}
-                    src={currentRoundRow.narration_audio_url}
-                    rightTag={currentRound === 4 ? "Part A" : undefined}
-                  />
+                  <AudioConsole title={`Round ${currentRound} Narration`} subtitle={currentRoundRow?.title ?? undefined} src={currentRoundRow.narration_audio_url} rightTag={currentRound === 4 ? "Part A" : undefined} />
 
                   {currentRound === 4 && currentRoundRow?.narration_audio_url_part_b ? (
                     <div style={{ marginTop: 12 }}>
-                      <AudioConsole
-                        title="Reveal — Part B"
-                        subtitle="Play after final accusations."
-                        src={currentRoundRow.narration_audio_url_part_b}
-                        rightTag="Part B"
-                        compact
-                      />
+                      <AudioConsole title="Reveal — Part B" subtitle="Play after final accusations." src={currentRoundRow.narration_audio_url_part_b} rightTag="Part B" compact />
                     </div>
                   ) : null}
                 </>
@@ -1423,9 +1602,7 @@ export default function Host() {
               <div className="hr" />
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <div className="small" style={{ marginTop: 0 }}>
-                  Narration text (reference)
-                </div>
+                <div className="small" style={{ marginTop: 0 }}>Narration text (reference)</div>
 
                 <button className="deadair-btn deadair-btnGhost" onClick={() => setShowNarrationText((v) => !v)} aria-expanded={showNarrationText}>
                   {showNarrationText ? "Hide text" : "Show text"}
@@ -1459,12 +1636,7 @@ export default function Host() {
 
                       <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
 
-                      <button
-                        className="deadair-btn deadair-btnGhost"
-                        style={{ padding: "8px 10px" }}
-                        onClick={() => router.push(`/p/${p.code}`)}
-                        title="Open the player page"
-                      >
+                      <button className="deadair-btn deadair-btnGhost" style={{ padding: "8px 10px" }} onClick={() => router.push(`/p/${p.code}`)} title="Open the player page">
                         👤 Open player view
                       </button>
                     </div>
@@ -1521,12 +1693,7 @@ export default function Host() {
 
                           <span className="pill pillPrivate">intake: {p.intake_complete ? "✅ complete" : "⏳ pending"}</span>
 
-                          <button
-                            className="deadair-btn deadair-btnGhost"
-                            style={{ padding: "8px 10px" }}
-                            onClick={() => router.push(`/p/${p.code}`)}
-                            title="Open the player page"
-                          >
+                          <button className="deadair-btn deadair-btnGhost" style={{ padding: "8px 10px" }} onClick={() => router.push(`/p/${p.code}`)} title="Open the player page">
                             👤 Open player view
                           </button>
                         </div>
